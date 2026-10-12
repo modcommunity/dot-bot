@@ -24,6 +24,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/core/dot_bot_contact.gd`, `dot_bot_intent.gd` | what the brain reads (a body) and returns (what it would press) |
 | `addons/dot_bot/core/dot_bot_names.gd` | `DotBotNames`: the name pool |
 | `addons/dot_bot/runtime/dot_bot_world.gd` | `DotBotWorld`: all a brain may know (bodies, line of sight, waypoints, sounds) |
+| `addons/dot_bot/runtime/dot_bot_aim.gd` | `DotBotAim`: the view, the aim error, the reaction and the trigger; the brain's, and a game with its own decisions uses it alone |
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
 | `addons/dot_bot/runtime/dot_bot_roster.gd` | `DotBotRoster`: from the bots there are to the number wanted, named |
 | `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels |
@@ -46,6 +47,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 - A cvar validator is a static method, never a lambda: a lambda's script can be gone before the console at teardown (dot-server's `DotBotQuota` found it).
 - Sounds are heard by sequence number, never by time. [history](docs/history.md)
 - A target killed in view is forgotten, not searched for; a sound or a lost target the bot is not going after holds it for `GLANCE` (1.2 s), not its whole memory. [design](docs/design.md#the-fight)
+- A caller of `DotBotAim` engages every tick it sees its target; a gap over 0.25 s is a lost target (a re-sight within 1.5 s reacts in half the time), over that a new engagement. [design](docs/design.md#the-fight)
 - Randomness is the bot's own `DotRandomStream` (seeded from its id), never `randf`; the clock is the caller's `now`. [design](docs/design.md#determinism)
 - Nightmare's reaction stays above 0.1 s and its aim floor above 0. [presets](docs/presets.md#what-each-preset-is)
 
@@ -57,6 +59,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | What it hears | `DotBotWorld.emit_sound(position, loudness, source, now)` from the game's shots and steps |
 | That it was hit | `DotBotBrain.hurt(from, now)` |
 | How it plays | `bot_difficulty` and the `bot_*` settings, or a `DotBotSettings` of a game's own per bot |
+| How a bot with a game's own decisions aims and shoots | `DotBotAim`: `view_from`, `engage` every tick it sees the target, `track` or `look_at_point`, `trigger`, `hurt` |
 | Its commands | `DotBotIntent.write_move` / `write_fire` (a game's throw button by constant name) |
 | Its name | `DotBotNames.pick`, or `DotBotRoster.pool` / `prefix` |
 | How many | dot-server's `DotBotQuota` for the number, `DotBotRoster.keep` to reach it; `solo_wanted` for one person |

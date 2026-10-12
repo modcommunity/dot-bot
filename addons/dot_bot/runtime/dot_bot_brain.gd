@@ -25,6 +25,7 @@ extends RefCounted
 ## backing out when badly hurt, pre-aiming and re-peeking a corner a target went behind, a
 ## grenade at somebody who just took cover, turning to a gunshot or to whoever hit it, and
 ## roaming toward where it last knew of an enemy. Every one of those is a [DotBotProfile] field.
+## The first four are [DotBotAim], which a game with decisions of its own uses by itself.
 ##
 ## [b]Pure.[/b] It reads a [DotBotContact] for itself and a [DotBotWorld], and returns an
 ## intent; it moves nothing. Its randomness is a [DotRandomStream] seeded from [member id], so
@@ -45,42 +46,24 @@ const CLOSE_NOTICE := 2.0
 ## Health fraction under which a bot that rolled [member DotBotProfile.cover] backs out.
 const RETREAT_HEALTH := 0.35
 
-## Seconds a flinch takes to halve.
-const FLINCH_HALF_LIFE := 0.3
-
 ## Seconds a bot that is not going after a sound or a lost target spends looking toward it.
 const GLANCE := 1.2
 
 ## Longest gap between thinks that is integrated as one step, seconds.
 const MAX_STEP := 0.25
 
-## Seconds a bot with no prediction trails a moving target by: about how far behind a person
-## tracking by eye is. bot_prediction takes it to nothing.
-const TRACK_LAG := 0.08
-
 var id: int = 0
 var settings: DotBotSettings = null
+
+## The view, the aim error, the reaction and the trigger.
+var aim: DotBotAim = null
 
 ## The latest intent, for describe().
 var last: DotBotIntent = null
 
-# The view the brain believes it has, in command degrees.
-var _yaw: float = NAN
-var _pitch: float = 0.0
-var _want_prev: Vector2 = Vector2(NAN, NAN)
-
-# The target and the engagement.
+# The target, as perceived.
 var target_id: int = -1
 var _visible: bool = false
-var _react_at: float = INF
-var _engaged_at: float = -INF
-var _seen_at: float = NAN
-var _first_shot_at: float = NAN
-var _first_shot_error: float = NAN
-var _err_mag0: float = 0.0
-var _err_angle: float = 0.0
-var _err_spin: float = 1.0
-var _flinch: float = 0.0
 var _roll_stop: bool = false
 var _roll_crouch: bool = false
 var _roll_cover: bool = false
@@ -105,9 +88,6 @@ var _known_enemy: Vector3 = Vector3.INF
 # Movement.
 var _strafe: float = 0.0
 var _strafe_until: float = -INF
-var _in_burst: bool = false
-var _burst_until: float = -INF
-var _pause_until: float = -INF
 var _waypoint: Vector3 = Vector3.INF
 var _stuck_at: float = 0.0
 var _stuck_from: Vector3 = Vector3.INF
@@ -120,6 +100,7 @@ var _rng: DotRandomStream = null
 func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
 	id = p_id
 	settings = p_settings if p_settings != null else DotBotSettings.new()
+	aim = DotBotAim.new(p_id, settings)
 	_rng = DotRandomStream.new(p_id).stream(&"dot_bot")
 
 
@@ -134,8 +115,8 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_was_alive = false
 		_forget_target()
 		out.state = &"dead"
-		out.yaw = 0.0 if is_nan(_yaw) else _yaw
-		out.pitch = _pitch
+		out.yaw = aim.yaw
+		out.pitch = aim.pitch
 		last = out
 		return out
 
@@ -146,15 +127,8 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_waypoint = Vector3.INF
 		_heard_at = -INF
 		_hurt_at = -INF
-		_yaw = NAN
 
-	if not is_nan(me.view_yaw):
-		_yaw = me.view_yaw
-		_pitch = me.view_pitch
-	elif is_nan(_yaw):
-		_yaw = 0.0
-
-	_flinch *= pow(0.5, dt / FLINCH_HALF_LIFE) if dt > 0.0 else 1.0
+	aim.view_from(me.view_yaw, me.view_pitch)
 
 	var all := world.contacts() if world != null else []
 	var seen := _perceive(me, all, world, p, now)
@@ -170,8 +144,8 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	else:
 		_roam(me, world, p, now, dt, out)
 
-	out.yaw = _yaw
-	out.pitch = _pitch
+	out.yaw = aim.yaw
+	out.pitch = aim.pitch
 	out.target_id = target_id if _visible else -1
 	last = out
 	return out
@@ -186,7 +160,7 @@ func _hold_time(p: DotBotProfile, committed: bool) -> float:
 
 ## Being hit. [param from] is where the shot came from (INF when unknown).
 func hurt(from: Vector3, now: float) -> void:
-	_flinch += settings.profile.flinch
+	aim.hurt()
 	if from != Vector3.INF:
 		_hurt_from = from
 		_hurt_at = now
@@ -196,27 +170,20 @@ func hurt(from: Vector3, now: float) -> void:
 ## The current or last engagement, for a suite: when the target was first seen, when the bot
 ## could first fire, when it first did, and how far off the target its view was then.
 func engagement() -> Dictionary:
-	return {
-		"target": target_id,
-		"seen_at": _seen_at,
-		"react_at": _react_at,
-		"first_shot_at": _first_shot_at,
-		"first_shot_error_deg": _first_shot_error,
-		"aim_error_deg": _error_deg(_now if not is_nan(_now) else 0.0, settings.profile),
-	}
+	var out := aim.engagement()
+	out["aim_error_deg"] = aim.error_deg(_now if not is_nan(_now) else 0.0)
+	return out
 
 
 # --- Seeing ---------------------------------------------------------------------
 
 func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, now: float) -> DotBotContact:
 	var eye := me.eye()
-	var forward := DotBotIntent.direction(_yaw, _pitch)
+	var forward := DotBotAim.direction(aim.yaw, aim.pitch)
 	var half := p.fov * 0.5
 	var current: DotBotContact = null
 	var best: DotBotContact = null
 	var best_score := INF
-	var best_off := 0.0
-	var current_off := 0.0
 
 	for item in all:
 		if not (item is DotBotContact):
@@ -245,22 +212,23 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 		var score := d * (1.0 + off / 60.0)
 		if c.id == target_id and _visible:
 			current = c
-			current_off = off
 		if score < best_score:
 			best_score = score
 			best = c
-			best_off = off
 
 	var chosen := current if current != null else best
-	var chosen_off := current_off if current != null else best_off
 
 	if chosen == null:
 		if _visible:
 			_lose(p, now)
 		return null
 
-	if chosen.id != target_id or not _visible:
-		_acquire(chosen, chosen_off, p, now)
+	if aim.engage(chosen.id, eye, chosen.aim_point(), now):
+		# A new engagement: how this fight will go, rolled once.
+		_roll_stop = _rng.next_unit() < p.stop_to_shoot
+		_roll_crouch = _rng.next_unit() < p.crouch
+		_roll_cover = _rng.next_unit() < p.cover
+		DotLog.trace(CHANNEL, "bot acquires a target", {"bot": id, "target": chosen.id})
 
 	_visible = true
 	target_id = chosen.id
@@ -271,34 +239,10 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	return chosen
 
 
-func _acquire(c: DotBotContact, off: float, p: DotBotProfile, now: float) -> void:
-	var jitter := 0.85 + 0.3 * _rng.next_unit()
-	# The same target back within a moment, where the bot was already looking for it: a held
-	# angle or a re-peek, and a person is quicker at that than at somebody new.
-	var resumed := c.id == target_id and now - _last_seen_at <= minf(p.memory, 1.5)
-
-	if resumed:
-		_react_at = now + p.reaction * jitter * 0.5
-	else:
-		_react_at = now + p.reaction * jitter + p.notice * clampf(off / 90.0, 0.0, 2.0)
-		_engaged_at = now
-		_seen_at = now
-		_first_shot_at = NAN
-		_first_shot_error = NAN
-		_err_mag0 = p.aim_error * (0.75 + 0.5 * _rng.next_unit())
-		_err_angle = _rng.next_unit() * TAU
-		_err_spin = (0.6 + _rng.next_unit()) * (1.0 if _rng.next_unit() < 0.5 else -1.0)
-		_roll_stop = _rng.next_unit() < p.stop_to_shoot
-		_roll_crouch = _rng.next_unit() < p.crouch
-		_roll_cover = _rng.next_unit() < p.cover
-		_want_prev = Vector2(NAN, NAN)
-		DotLog.trace(CHANNEL, "bot acquires a target", {"bot": id, "target": c.id, "off_deg": snappedf(off, 0.1)})
-
-
 func _lose(p: DotBotProfile, now: float) -> void:
 	_visible = false
 	_lost_at = now
-	_in_burst = false
+	aim.release()
 	_peeking = _rng.next_unit() < p.peek
 	_chase_lost = _rng.next_unit() < p.aggression
 	_grenade_ready = _rng.next_unit() < p.grenades
@@ -309,8 +253,7 @@ func _forget_target() -> void:
 	_visible = false
 	_last_seen_pos = Vector3.INF
 	_last_seen_at = -INF
-	_in_burst = false
-	_want_prev = Vector2(NAN, NAN)
+	aim.forget()
 
 
 # --- Hearing --------------------------------------------------------------------
@@ -343,43 +286,15 @@ func _hear(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, 
 
 func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	var eye := me.eye()
-	# Trailing a moving target by what the bot does not predict, leading it by what it does
-	# for a weapon that is not instant.
-	var aim := c.aim_point() - c.velocity * (1.0 - p.prediction) * TRACK_LAG
 	var speed := world.projectile_speed(me) if world != null else 0.0
-	if speed > 0.0:
-		aim += c.velocity * (eye.distance_to(aim) / speed) * p.prediction
-
-	var want := _angles_to(eye, aim)
-	_err_angle += _err_spin * dt
-	var e := _error_deg(now, p) * (0.55 + 0.45 * sin(_err_angle * 1.7 + 0.3))
-	want += Vector2(e * cos(_err_angle), e * sin(_err_angle) * 0.6)
-	_turn_toward(want, p, dt)
+	var _view := aim.track(eye, c.aim_point(), c.velocity, now, dt, speed)
 
 	var flat := Vector2(c.position.x - me.position.x, c.position.z - me.position.z)
 	var dist := flat.length()
-	var on_aim := _angle_between(Vector2(_yaw, _pitch), want) <= p.fire_cone
-	var can := now >= _react_at and on_aim and dist <= p.max_range
-
-	var trigger := false
-	if can and dist > p.burst_range:
-		if not _in_burst and now >= _pause_until:
-			_in_burst = true
-			_burst_until = now + p.burst * (0.8 + 0.4 * _rng.next_unit())
-		if _in_burst and now >= _burst_until:
-			_in_burst = false
-			_pause_until = now + p.burst_pause * (0.8 + 0.4 * _rng.next_unit())
-		trigger = _in_burst
-	elif can:
-		trigger = true
-		_in_burst = false
-	else:
-		_in_burst = false
-
+	var trigger := aim.trigger(now, dist)
 	out.fire = trigger
-	if trigger and is_nan(_first_shot_at):
-		_first_shot_at = now
-		_first_shot_error = rad_to_deg(DotBotIntent.direction(_yaw, _pitch).angle_to(c.aim_point() - eye))
+	if trigger:
+		aim.note_shot(eye, c.aim_point(), now)
 
 	# Distance and strafing.
 	var dir := flat / dist if dist > 0.01 else Vector2(0.0, -1.0)
@@ -422,7 +337,7 @@ func _search(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: Do
 
 	if _grenade_ready and since >= 0.4 and since <= 3.0 and dist >= 6.0 and dist <= 25.0:
 		# Lobbed: a little above the spot, so it carries.
-		_turn_toward(_angles_to(me.eye(), guess + Vector3.UP * (1.0 + dist * 0.15)), p, dt)
+		var _v := aim.look_at_point(me.eye(), guess + Vector3.UP * (1.0 + dist * 0.15), dt)
 		out.throw = true
 		_grenade_ready = false
 		return
@@ -434,14 +349,14 @@ func _search(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: Do
 	var dir := flat / dist if dist > 0.01 else Vector2.ZERO
 	if _peeking:
 		# Pre-aimed at the corner, shuffling in and out of it.
-		_turn_toward(_angles_to(me.eye(), guess + Vector3.UP * 1.25), p, dt)
+		var _v := aim.look_at_point(me.eye(), guess + Vector3.UP * 1.25, dt)
 		var side := 1.0 if fmod(since, 1.2) < 0.6 else -1.0
 		_set_move(out, dir * (0.6 if _chase_lost else 0.0) + Vector2(-dir.y, dir.x) * side * 0.8)
 	elif _chase_lost:
-		_turn_toward(_angles_to(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y)), p, dt)
+		var _v := aim.look_at_point(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y), dt)
 		_set_move(out, dir)
 	else:
-		_turn_toward(_angles_to(me.eye(), guess + Vector3.UP * 1.25), p, dt)
+		var _v := aim.look_at_point(me.eye(), guess + Vector3.UP * 1.25, dt)
 
 
 func _listen(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
@@ -449,7 +364,7 @@ func _listen(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: Do
 	var at := _hurt_from if _hurt_at >= _heard_at else _heard_pos
 	if at == Vector3.INF:
 		return
-	_turn_toward(_angles_to(me.eye(), at + Vector3.UP * 1.25), p, dt)
+	var _v := aim.look_at_point(me.eye(), at + Vector3.UP * 1.25, dt)
 	var flat := Vector2(at.x - me.position.x, at.z - me.position.z)
 	if (_chase_sound or _hurt_at >= _heard_at) and flat.length() > 2.0:
 		_set_move(out, flat.normalized())
@@ -467,16 +382,16 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 
 	if _waypoint == Vector3.INF:
 		# Nowhere to go: look about.
-		_turn_toward(Vector2(_yaw + 40.0 * dt, 0.0), p, dt)
+		aim.turn_to(Vector2(aim.yaw + 40.0 * dt, 0.0), dt)
 		return
 
 	var flat := Vector2(_waypoint.x, _waypoint.z) - here
 	var dir := flat.normalized() if flat.length() > 0.01 else Vector2.ZERO
 	# Looking where it walks, with the glance to either side a person checking corners has.
-	var look := _angles_to(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y))
+	var look := DotBotAim.angles_to(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y))
 	look.x += 25.0 * sin(now * 0.8 + float(id % 97))
 	look.y = 0.0
-	_turn_toward(look, p, dt)
+	aim.turn_to(look, dt)
 	_set_move(out, dir)
 
 	# Stuck against something: hop, and go somewhere else.
@@ -506,55 +421,13 @@ func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> 
 	return far[_rng.next_range_i(0, far.size() - 1)]
 
 
-# --- The view -------------------------------------------------------------------
-
-## Degrees of aim error now: the opening error halving every aim_settle seconds down to the
-## floor, plus whatever being hit added.
-func _error_deg(now: float, p: DotBotProfile) -> float:
-	var age := maxf(now - _engaged_at, 0.0) if _engaged_at > -INF else 0.0
-	var settled := p.aim_floor + maxf(_err_mag0 - p.aim_floor, 0.0) * pow(0.5, age / maxf(p.aim_settle, 0.01))
-	return settled + _flinch
-
-
-## Turns the view toward [param want] (yaw, pitch): the target's own motion carried as far as
-## prediction lets it, the rest closed smoothly, and the whole step no faster than turn_rate.
-func _turn_toward(want: Vector2, p: DotBotProfile, dt: float) -> void:
-	if dt <= 0.0:
-		_want_prev = want
-		return
-	var carry := Vector2.ZERO
-	if not is_nan(_want_prev.x):
-		# Everybody follows at least half of a target's motion by eye; prediction is the rest.
-		carry = Vector2(wrapf(want.x - _want_prev.x, -180.0, 180.0), want.y - _want_prev.y) * (0.5 + 0.5 * p.prediction)
-	_want_prev = want
-
-	var diff := Vector2(wrapf(want.x - _yaw, -180.0, 180.0), want.y - _pitch)
-	var k := clampf(p.turn_smooth * dt * 12.0, 0.0, 1.0)
-	var step := carry + (diff - carry) * k
-	if step.length() > diff.length():
-		step = diff
-	var limit := p.turn_rate * dt
-	if step.length() > limit:
-		step = step.normalized() * limit
-	_yaw = wrapf(_yaw + step.x, -180.0, 180.0)
-	_pitch = clampf(_pitch + step.y, -85.0, 85.0)
-
+# --- Moving --------------------------------------------------------------------
 
 func _set_move(out: DotBotIntent, world_dir: Vector2) -> void:
-	var y := deg_to_rad(_yaw)
+	var y := deg_to_rad(aim.yaw)
 	var forward := Vector2(-sin(y), -cos(y))
 	var right := Vector2(cos(y), -sin(y))
 	out.move = Vector2(world_dir.dot(right), world_dir.dot(forward)).limit_length(1.0)
-
-
-## (yaw, pitch) in command degrees from [param from] toward [param to].
-static func _angles_to(from: Vector3, to: Vector3) -> Vector2:
-	var d := to - from
-	return Vector2(rad_to_deg(atan2(-d.x, -d.z)), rad_to_deg(atan2(d.y, Vector2(d.x, d.z).length())))
-
-
-static func _angle_between(a: Vector2, b: Vector2) -> float:
-	return rad_to_deg(DotBotIntent.direction(a.x, a.y).angle_to(DotBotIntent.direction(b.x, b.y)))
 
 
 func describe() -> Dictionary:
@@ -564,8 +437,8 @@ func describe() -> Dictionary:
 		"state": last.state if last != null else &"",
 		"target": target_id,
 		"visible": _visible,
-		"yaw": snappedf(_yaw, 0.1) if not is_nan(_yaw) else NAN,
-		"aim_error_deg": snappedf(_error_deg(_now if not is_nan(_now) else 0.0, settings.profile), 0.01),
+		"yaw": snappedf(aim.yaw, 0.1),
+		"aim_error_deg": snappedf(aim.error_deg(_now if not is_nan(_now) else 0.0), 0.01),
 	}
 
 

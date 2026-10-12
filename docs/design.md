@@ -33,6 +33,8 @@ Each tick the brain perceives first, then does one of:
 
 ## The fight
 
+The view, the aim error, the reaction and the trigger are `DotBotAim`, which the brain holds and a game with decisions of its own (a co-op stand-in, a hunter sweeping a room) uses by itself: it calls `view_from` with the body's view going into the tick, `engage` every tick it sees its target, `track` toward the target (or `look_at_point` toward anything else), and `trigger` for the button. Asked again within 0.25 s, an engagement simply continues, so a game ticking twenty times a second does not restart the reaction every tick.
+
 **The view is turned, never set.** The brain closes on where it wants to look smoothly (`bot_turn_smooth`), carrying half of a moving target's motion plus `bot_prediction` of the rest, and the whole step is clamped to `bot_turn_rate`. A target outside the view takes visible time to turn onto.
 
 **The aim starts off and settles.** An engagement opens `bot_aim_error` degrees off (scaled 0.75 to 1.25 per engagement), in a direction that drifts, halves every `bot_aim_settle` seconds down to `bot_aim_floor`, and swings between about half and all of that. A hit adds `bot_flinch`. A target re-acquired within 1.5 s continues the same engagement (the error keeps settling) and reacts in half the time, which is what a held angle is.

@@ -14,11 +14,11 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 108
+const CHECKS := 116
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 11
+const SECTIONS := 12
 
 const TICK := 1.0 / 64.0
 
@@ -158,6 +158,7 @@ func _run() -> void:
 	_test_names()
 	_test_roster()
 	_test_intent()
+	_test_aim()
 	_test_senses()
 	_test_turning()
 	_test_reaction_and_aim()
@@ -412,6 +413,60 @@ func _test_intent() -> void:
 	_check(f.buttons == (FakeFire.BUTTON_ATTACK | FakeFire.BUTTON_USER_0), "trigger and the game's throw button", str(f.buttons))
 	_check(DotBotIntent.direction(0.0, 0.0).is_equal_approx(Vector3(0, 0, -1)), "yaw 0 looks down -Z")
 	_check(DotBotIntent.direction(90.0, 0.0).is_equal_approx(Vector3(-1, 0, 0)), "yaw 90 looks down -X")
+	_done()
+
+
+# --- Aim alone ---------------------------------------------------------------------
+
+## DotBotAim on its own, the way a game with its own decisions uses it.
+func _test_aim() -> void:
+	_section("DotBotAim on its own")
+
+	var s := DotBotSettings.new()
+	var aim := DotBotAim.new(5, s)
+	var eye := Vector3(0, 1.6, 0)
+	var chest := Vector3(0, 1.25, -12)
+	_check(aim.engage(9, eye, chest, 0.0), "a first sight starts an engagement")
+	_check(not aim.engage(9, eye, chest, 0.05), "seeing it again next tick continues it")
+	_check(not aim.engage(9, eye, chest, 0.05 + 0.2), "and at 5 ticks a second too (no new reaction every tick)")
+	var react := aim.react_at
+	var t := 0.25
+	var fired_early := false
+	var first := NAN
+	while t < 3.0:
+		var _seen := aim.engage(9, eye, chest, t)
+		var _v := aim.track(eye, chest, Vector3.ZERO, t, 1.0 / 64.0)
+		var down := aim.trigger(t, 12.0)
+		if down and t < react:
+			fired_early = true
+		if down and is_nan(first):
+			first = t
+		t += 1.0 / 64.0
+	_check(not fired_early and not is_nan(first), "never fires before its reaction, then does", "%.3f vs %.3f" % [first, react])
+
+	aim.release()
+	_check(not aim.engage(9, eye, chest, 3.5) and aim.react_at - 3.5 <= s.profile.reaction * 0.6,
+		"back in sight within 1.5 s: the same engagement, half the reaction", "%.3f" % (aim.react_at - 3.5))
+	_check(aim.engage(9, eye, chest, 9.0), "back after its memory: a new engagement")
+
+	# Bursts beyond burst_range: the trigger comes and goes.
+	var far := Vector3(0, 1.25, -30)
+	var _e := aim.engage(10, eye, far, 20.0)
+	var changes := 0
+	var was := false
+	t = 20.0
+	while t < 24.0:
+		var _v := aim.track(eye, far, Vector3.ZERO, t, 1.0 / 64.0)
+		var down := aim.trigger(t, 30.0)
+		if down != was:
+			changes += 1
+		was = down
+		t += 1.0 / 64.0
+	_check(changes >= 6, "beyond burst_range it fires in bursts", "%d changes" % changes)
+
+	var settled := aim.error_deg(24.0)
+	aim.hurt()
+	_check(aim.error_deg(24.0) > settled + s.profile.flinch * 0.9, "a hit adds bot_flinch to the aim error")
 	_done()
 
 

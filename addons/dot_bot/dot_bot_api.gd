@@ -7,7 +7,7 @@ extends RefCounted
 ## because every pack built before that no longer compiles against this addon.
 
 # 1: DotBotProfile (presets as bundles of settings), DotBotSettings (bot_difficulty and the
-#    bot_* cvars, server and solo), DotBotBrain, DotBotWorld, DotBotContact, DotBotIntent,
+#    bot_* cvars, server and solo), DotBotBrain, DotBotAim, DotBotWorld, DotBotContact, DotBotIntent,
 #    DotBotNames, DotBotRoster.
 const LEVEL := 1
 const OLDEST := 1

@@ -51,6 +51,18 @@ brain.hurt(attacker_eye_position, now)
 
 `write_move` and `write_fire` read the button bits from your command's own constants (`BUTTON_ATTACK`, `BUTTON_CROUCH`, `BUTTON_JUMP`), so dot-player-controller's `DotFpsCommand` and dot-weapon's `DotWeaponCommand` work as they are.
 
+A game that already decides what its bots do can use just the aiming part, so its bots still turn, miss and react like the presets say:
+
+```gdscript
+var aim := DotBotAim.new(bot_id, DotBotSettings.of(game))
+aim.view_from(body_yaw, body_pitch)                 # each tick, the view going into it
+aim.engage(target_id, eye, target_chest, now)        # each tick it can see its target
+var view := aim.track(eye, target_chest, target_velocity, now, delta)
+command.yaw = view.x
+command.pitch = view.y
+fire = aim.trigger(now, eye.distance_to(target_chest))
+```
+
 On a server, register the cvars on your module. In a solo game, add them to the player's console:
 
 ```gdscript
