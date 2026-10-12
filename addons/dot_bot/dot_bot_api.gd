@@ -11,5 +11,6 @@ extends RefCounted
 #    DotBotNames, DotBotRoster.
 # 2: DotBotNav (a navigation mesh baked from colliders), DotBotHiding (spots scored by sight
 #    lines, picked apart), DotBotSearch (a seeker's memory of the places).
-const LEVEL := 2
+# 3: DotBotNav.bake_in_background, is_baking (a mesh baked on a worker thread).
+const LEVEL := 3
 const OLDEST := 1
