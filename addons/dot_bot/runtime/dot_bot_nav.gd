@@ -39,8 +39,14 @@ const CELL_HEIGHT := 0.1
 ## The baked mesh, or null before [method bake].
 var mesh: NavigationMesh = null
 
-## How long the last bake took, milliseconds.
+## How long the last bake took, milliseconds: from the parse to the mesh taken in, so a
+## [method bake_in_background] counts the time it spent on its thread.
 var bake_ms: float = 0.0
+
+var _started: int = 0
+var _baking: bool = false
+## Bumped by [method clear]; a background bake started under another number is dropped.
+var _generation: int = 0
 
 var _map: RID = RID()
 var _synced: bool = false
@@ -56,12 +62,65 @@ var _total_area: float = 0.0
 ## (degrees); [param mask] the collision layers that count as ground and walls (0 for all).
 ## With [param bodies] (nodes under [param root]), only those and their children are parsed.
 func bake(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = []) -> DotResult:
+	var parsed := _parse(root, agent, mask, bodies)
+	if not parsed.ok:
+		return parsed
+	NavigationServer3D.bake_from_source_geometry_data(mesh, parsed.value)
+	return _take_in()
+
+
+## [method bake], with the bake itself on a worker thread: the colliders are parsed now (that
+## has to be the main thread, and is milliseconds), the mesh is built off it, and it is taken in
+## on the main thread when it is done, which calls [param done] with [method bake]'s result.
+## Until then [method path] answers empty and [method is_baking] is true. Returns a failure
+## only when there is nothing to bake; otherwise success, with the result still to come.
+##
+## [b]For a map too big to bake inside a tick.[/b] game-arena's imported surf maps are twenty
+## to fifty thousand collision vertices and took two to three seconds to bake against a map
+## change of a tenth of one: on a server that is every player's game stopping at the change.
+## The price is [method bake]'s determinism: when the mesh arrives depends on the machine, so a
+## game that replays a seeded round from its paths must use [method bake]. Without threads
+## ([method DotPlatform.has_threads]) this is [method bake], and [param done] is called before
+## it returns.
+func bake_in_background(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = [], done: Callable = Callable()) -> DotResult:
+	var parsed := _parse(root, agent, mask, bodies)
+	if not parsed.ok:
+		return parsed
+	if not DotPlatform.has_threads():
+		NavigationServer3D.bake_from_source_geometry_data(mesh, parsed.value)
+		var res := _take_in()
+		if done.is_valid():
+			done.call(res)
+		return res
+	_baking = true
+	# The generation and the mesh are bound so a bake that lands after clear() or a newer bake
+	# is dropped instead of taken in over the map that replaced it.
+	NavigationServer3D.bake_from_source_geometry_data_async(mesh, parsed.value, _on_baked.bind(_generation, mesh, done))
+	return DotResult.success(0)
+
+
+## Whether a [method bake_in_background] has not landed yet.
+func is_baking() -> bool:
+	return _baking
+
+
+func _on_baked(generation: int, baked: NavigationMesh, done: Callable) -> void:
+	if generation != _generation or baked != mesh:
+		return
+	_baking = false
+	var res := _take_in()
+	if done.is_valid():
+		done.call(res)
+
+
+## Clears, then sets [member mesh] up and parses the colliders into source geometry.
+func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotResult:
 	clear()
 
 	if root == null or not root.is_inside_tree():
 		return DotResult.fail(DotError.CODE_INVALID, "nothing to bake: the map is not in the tree")
 
-	var started := Time.get_ticks_usec()
+	_started = Time.get_ticks_usec()
 	mesh = NavigationMesh.new()
 	mesh.cell_size = CELL
 	mesh.cell_height = CELL_HEIGHT
@@ -85,12 +144,15 @@ func bake(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = [
 
 	var source := NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(mesh, source, root)
-	NavigationServer3D.bake_from_source_geometry_data(mesh, source)
 	for body: Node in bodies:
 		body.remove_from_group(group)
+	return DotResult.success(source)
 
+
+## Hands the baked [member mesh] to a navigation map of its own.
+func _take_in() -> DotResult:
 	if mesh.get_polygon_count() == 0:
-		bake_ms = (Time.get_ticks_usec() - started) / 1000.0
+		bake_ms = (Time.get_ticks_usec() - _started) / 1000.0
 		return DotResult.fail(DotError.CODE_INVALID, "the bake found nowhere to walk")
 
 	_map = NavigationServer3D.map_create()
@@ -108,7 +170,7 @@ func bake(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = [
 	NavigationServer3D.map_force_update(_map)
 	_index_areas()
 
-	bake_ms = (Time.get_ticks_usec() - started) / 1000.0
+	bake_ms = (Time.get_ticks_usec() - _started) / 1000.0
 	DotLog.debug(CHANNEL, "baked", {"polygons": mesh.get_polygon_count(), "ms": snappedf(bake_ms, 0.1)})
 	return DotResult.success(mesh.get_polygon_count())
 
@@ -207,6 +269,8 @@ func clear() -> void:
 	_region = RID()
 	_map = RID()
 	_synced = false
+	_baking = false
+	_generation += 1
 	mesh = null
 	_areas = PackedFloat32Array()
 	_total_area = 0.0
@@ -228,6 +292,7 @@ func _index_areas() -> void:
 func describe() -> Dictionary:
 	return {
 		"ready": is_ready() if is_baked() else false,
+		"baking": _baking,
 		"polygons": mesh.get_polygon_count() if mesh != null else 0,
 		"area": snappedf(_total_area, 0.1),
 		"bake_ms": snappedf(bake_ms, 0.1),
@@ -237,4 +302,4 @@ func describe() -> Dictionary:
 func describe_lines() -> PackedStringArray:
 	var facts := describe()
 	return PackedStringArray(["nav  %s, %d polygons, %.0f m2, baked in %.0f ms" % [
-		"ready" if facts["ready"] else "not baked", facts["polygons"], facts["area"], facts["bake_ms"]]])
+		"ready" if facts["ready"] else ("baking" if facts["baking"] else "not baked"), facts["polygons"], facts["area"], facts["bake_ms"]]])

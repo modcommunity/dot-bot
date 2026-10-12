@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 133
+const CHECKS := 137
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
@@ -316,7 +316,33 @@ func _test_nav() -> void:
 	var a := nav.random_point(DotRandomStream.new(9))
 	var b := nav.random_point(DotRandomStream.new(9))
 	_check(a.is_equal_approx(b) and absf(a.y) < 0.5, "a random point is on the floor, the same for the same seed")
+	var polygons := nav.mesh.get_polygon_count()
 	nav.clear()
+
+	# In the background: nothing until it lands, then the same mesh, on the main thread.
+	var landed: Array = []
+	var started := nav.bake_in_background(root, {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [still],
+		func(res: DotResult) -> void: landed.append([res.ok, OS.get_thread_caller_id() == OS.get_main_thread_id()]))
+	var waiting := nav.is_baking() and nav.path(Vector3(-5.0, 0.0, -10.0), Vector3(5.0, 0.0, -10.0)).is_empty()
+	_check(started.ok and (waiting or not DotPlatform.has_threads()), "a background bake starts, and answers no path before it lands")
+	var frames := 0
+	while landed.is_empty() and frames < 600:
+		await get_tree().process_frame
+		frames += 1
+	_check(landed.size() == 1 and landed[0][0] and landed[0][1] and not nav.is_baking(),
+		"it lands once, on the main thread", "%s after %d frames" % [str(landed), frames])
+	var round_length := nav.path_length(Vector3(-5.0, 0.0, -10.0), Vector3(5.0, 0.0, -10.0))
+	_check(nav.mesh.get_polygon_count() == polygons and round_length > 12.0 and round_length < INF,
+		"the same mesh, and the same way round the wall", "%d polygons, %.1f m" % [nav.mesh.get_polygon_count(), round_length])
+
+	# A bake cleared before it lands is dropped, never taken in over what replaced it.
+	var stale: Array = []
+	var _again := nav.bake_in_background(root, {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [still],
+		func(res: DotResult) -> void: stale.append(res.ok))
+	nav.clear()
+	for i in 60:
+		await get_tree().process_frame
+	_check(stale.is_empty() and not nav.is_baked() and not nav.is_baking(), "a bake cleared before it lands is dropped", str(stale))
 	root.queue_free()
 	_done()
 

@@ -52,6 +52,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 - Randomness is the bot's own `DotRandomStream` (seeded from its id), never `randf`; the clock is the caller's `now`. [design](docs/design.md#determinism)
 - Nightmare's reaction stays above 0.1 s and its aim floor above 0. [presets](docs/presets.md#what-each-preset-is)
 - `DotBotNav.bake` gets the bodies that never move (a door baked shut is a wall on the mesh) and runs synchronous iterations, so it answers on the tick it baked and a seeded round replays the same. [design](docs/design.md#hiding-and-searching)
+- `DotBotNav.bake_in_background` is for a map too big to bake in a tick (seconds); it gives up that determinism, and is `bake` without threads. [design](docs/design.md#hiding-and-searching)
 - `DotBotSearch` crosses a place off only when the seeker has had it in view; nothing tells it where a hider is. [design](docs/design.md#hiding-and-searching)
 
 ## Where a game plugs in
