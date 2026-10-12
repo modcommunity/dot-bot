@@ -52,6 +52,9 @@ const GLANCE := 1.2
 ## Longest gap between thinks that is integrated as one step, seconds.
 const MAX_STEP := 0.25
 
+## Metres from a route's corner at which it counts as passed.
+const CORNER := 1.0
+
 var id: int = 0
 var settings: DotBotSettings = null
 
@@ -89,6 +92,9 @@ var _known_enemy: Vector3 = Vector3.INF
 var _strafe: float = 0.0
 var _strafe_until: float = -INF
 var _waypoint: Vector3 = Vector3.INF
+# The world's route to where the bot is walking, corner by corner, and the goal it was asked for.
+var _route: PackedVector3Array = PackedVector3Array()
+var _route_goal: Vector3 = Vector3.INF
 var _stuck_at: float = 0.0
 var _stuck_from: Vector3 = Vector3.INF
 
@@ -125,6 +131,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_was_alive = true
 		_forget_target()
 		_waypoint = Vector3.INF
+		_route_goal = Vector3.INF
 		_heard_at = -INF
 		_hurt_at = -INF
 
@@ -140,7 +147,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	elif _last_seen_pos != Vector3.INF and now - _last_seen_at <= _hold_time(p, _peeking or _chase_lost):
 		_search(me, p, now, dt, out)
 	elif maxf(_heard_at, _hurt_at) > -INF and now - maxf(_heard_at, _hurt_at) <= _hold_time(p, _chase_sound or _hurt_at >= _heard_at):
-		_listen(me, p, now, dt, out)
+		_listen(me, world, p, now, dt, out)
 	else:
 		_roam(me, world, p, now, dt, out)
 
@@ -359,7 +366,7 @@ func _search(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: Do
 		var _v := aim.look_at_point(me.eye(), guess + Vector3.UP * 1.25, dt)
 
 
-func _listen(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
+func _listen(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	out.state = &"listen"
 	var at := _hurt_from if _hurt_at >= _heard_at else _heard_pos
 	if at == Vector3.INF:
@@ -367,7 +374,7 @@ func _listen(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: Do
 	var _v := aim.look_at_point(me.eye(), at + Vector3.UP * 1.25, dt)
 	var flat := Vector2(at.x - me.position.x, at.z - me.position.z)
 	if (_chase_sound or _hurt_at >= _heard_at) and flat.length() > 2.0:
-		_set_move(out, flat.normalized())
+		_set_move(out, _toward(me, world, at))
 	elif flat.length() <= 2.0:
 		_heard_at = -INF
 		_hurt_at = -INF
@@ -385,8 +392,7 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 		aim.turn_to(Vector2(aim.yaw + 40.0 * dt, 0.0), dt)
 		return
 
-	var flat := Vector2(_waypoint.x, _waypoint.z) - here
-	var dir := flat.normalized() if flat.length() > 0.01 else Vector2.ZERO
+	var dir := _toward(me, world, _waypoint)
 	# Looking where it walks, with the glance to either side a person checking corners has.
 	var look := DotBotAim.angles_to(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y))
 	look.x += 25.0 * sin(now * 0.8 + float(id % 97))
@@ -399,6 +405,7 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 		if _stuck_from != Vector3.INF and me.position.distance_to(_stuck_from) < 0.75:
 			out.jump = true
 			_waypoint = Vector3.INF
+			_route_goal = Vector3.INF
 		_stuck_at = now
 		_stuck_from = me.position
 
@@ -422,6 +429,21 @@ func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> 
 
 
 # --- Moving --------------------------------------------------------------------
+
+## The flat direction to walk toward [param goal]: along the world's route to it when the world
+## has one ([method DotBotWorld.route]), straight at it when not. The route is asked for once per
+## goal and walked corner by corner; a corner within [constant CORNER] metres is passed.
+func _toward(me: DotBotContact, world: DotBotWorld, goal: Vector3) -> Vector2:
+	if goal != _route_goal:
+		_route_goal = goal
+		_route = world.route(me.position, goal) if world != null else PackedVector3Array()
+	var here := Vector2(me.position.x, me.position.z)
+	while not _route.is_empty() and here.distance_to(Vector2(_route[0].x, _route[0].z)) < CORNER:
+		_route.remove_at(0)
+	var at := _route[0] if not _route.is_empty() else goal
+	var flat := Vector2(at.x, at.z) - here
+	return flat.normalized() if flat.length() > 0.01 else Vector2.ZERO
+
 
 func _set_move(out: DotBotIntent, world_dir: Vector2) -> void:
 	var y := deg_to_rad(aim.yaw)

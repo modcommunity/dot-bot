@@ -33,6 +33,11 @@ var world := DotBotWorld.new()
 world.contacts_fn = func() -> Array: return my_players_as_contacts()   # Array of DotBotContact
 world.line_of_sight_fn = func(a: Vector3, b: Vector3) -> bool: return trace.line_of_sight(a, b)
 world.waypoints_fn = func() -> PackedVector3Array: return spawn_points
+# Optional: a walkable way between two places (a navigation graph's corners), so a bot does not
+# walk into the wall between it and a waypoint; and how fast the held weapon's shot flies, so a
+# rocket is led. Without them a bot walks straight and aims every weapon as hitscan.
+world.route_fn = func(from: Vector3, to: Vector3) -> PackedVector3Array: return nav.path(from, to)
+world.projectile_speed_fn = func(shooter: DotBotContact) -> float: return held_weapon_speed(shooter)
 
 # Every gunshot, so bots can hear it.
 world.emit_sound(shooter_position, 1.0, shooter_id, now)

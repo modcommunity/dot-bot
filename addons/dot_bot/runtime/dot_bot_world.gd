@@ -10,8 +10,8 @@ extends RefCounted
 ## brain's question, asked of [method line_of_sight], so "no shooting through walls" is
 ## structural rather than a rule each game remembers.
 ##
-## [b]Subclass or assign.[/b] A game either extends this and overrides the four methods, or
-## sets the four callables on a plain one ([member contacts_fn] and friends); both are the
+## [b]Subclass or assign.[/b] A game either extends this and overrides the methods, or
+## sets the callables on a plain one ([member contacts_fn] and friends); both are the
 ## family's usual extension point. The defaults see everything (no walls) and know no places,
 ## which is what a suite with no map wants.
 ##
@@ -41,6 +41,12 @@ var waypoints_fn: Callable = Callable()
 ## 0 for hitscan. The brain leads a target by it.
 var projectile_speed_fn: Callable = Callable()
 
+## [code](from: Vector3, to: Vector3) -> PackedVector3Array[/code]: the corners of a walkable way
+## from one place to another, [param to] last; empty when the game has no graph or no way. The
+## brain walks a route corner by corner where it has one and straight where it has none, so a
+## map with walls between its waypoints is not walked into the walls.
+var route_fn: Callable = Callable()
+
 ## Recent sounds: dictionaries with position, loudness (1 is a gunshot), source (an id), at
 ## and seq.
 var sounds: Array[Dictionary] = []
@@ -61,6 +67,10 @@ func line_of_sight(from: Vector3, to: Vector3) -> bool:
 
 func waypoints() -> PackedVector3Array:
 	return waypoints_fn.call() if waypoints_fn.is_valid() else PackedVector3Array()
+
+
+func route(from: Vector3, to: Vector3) -> PackedVector3Array:
+	return route_fn.call(from, to) if route_fn.is_valid() else PackedVector3Array()
 
 
 func projectile_speed(shooter: DotBotContact) -> float:

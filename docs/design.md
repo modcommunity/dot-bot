@@ -14,7 +14,7 @@ So dot-bot depends on dot-core alone and names no other addon: dot-server's cvar
 
 ## What a bot may know
 
-Everything is in `DotBotWorld`: the bodies, a line-of-sight answer, places to walk to, and the sounds made. A bot knows of another body only when:
+Everything is in `DotBotWorld`: the bodies, a line-of-sight answer, places to walk to and the way there, how fast the held weapon's shot flies, and the sounds made. A bot knows of another body only when:
 
 - it is inside the view cone (`bot_fov`) and within `bot_sight`, and the world says the line from the bot's eye to that body's chest or eye is clear; or it is within 2 m, which a person feels whatever way they face; or the bot is already fighting it and it is within 90 degrees (the bot is turning after it);
 - or it made a sound the bot heard: within `bot_hearing` times the sound's loudness (1 for a gunshot, about 0.3 for a swing or a step). A sound gives a rough position (the further, the vaguer), never a target;
@@ -29,7 +29,7 @@ Each tick the brain perceives first, then does one of:
 - **fight**: a target is in sight. Aim, fire when the view is on the aim and the reaction time has passed, keep `bot_range`, strafe, burst at range, maybe stand still or crouch for a long burst, maybe jump up close, back out when badly hurt (`bot_cover`).
 - **search**: the target went out of sight within `bot_memory`. Pre-aim where it went and shuffle in and out of the corner (`bot_peek`), or walk after it (`bot_aggression`), or hold and look; maybe throw at it (`bot_grenades`).
 - **listen**: a sound or a hit within memory. Turn to it; walk to it if the bot rolled to go after it.
-- **roam**: walk between the world's waypoints, glancing from side to side, toward where it last knew of an enemy when `bot_map_knowledge` says so; hop and pick another waypoint when it has not moved in 1.5 s.
+- **roam**: walk between the world's waypoints, glancing from side to side, toward where it last knew of an enemy when `bot_map_knowledge` says so; hop and pick another waypoint when it has not moved in 1.5 s. Where the world has a route (`DotBotWorld.route`, a game's navigation graph), the bot walks it corner by corner, asked once per goal; with none, straight at the waypoint, which is enough on an open floor and walks into the wall on a map with corners. Going after a sound walks the same way.
 
 ## The fight
 

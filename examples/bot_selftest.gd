@@ -14,11 +14,11 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 130
+const CHECKS := 133
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 15
+const SECTIONS := 16
 
 const TICK := 1.0 / 64.0
 
@@ -165,6 +165,7 @@ func _run() -> void:
 	_test_duels()
 	_test_hiding()
 	_test_search()
+	_test_route()
 	await _test_nav()
 
 	print("")
@@ -230,6 +231,55 @@ func _test_search() -> void:
 	_check(seen == 1 and search.unlooked(1.0) == 1, "looking at it crosses it off, and only what is in the cone")
 	search.heard(Vector3(0.0, 0.0, -7.0), 2.0)
 	_check(search.unlooked(2.0) == 2, "a sound near it puts it back")
+	_done()
+
+
+## A roaming bot with one place to go, walked at 4 m/s for [param seconds]: where it went.
+func _walk_roam(world: DotBotWorld, seconds: float) -> PackedVector3Array:
+	var me := DotBotContact.make(1, Vector3.ZERO)
+	world.contacts_fn = func() -> Array: return [me]
+	var brain := DotBotBrain.new(5)
+	var trail := PackedVector3Array()
+	var t := 0.0
+	while t < seconds:
+		var intent := brain.think(me, world, t)
+		me.view_yaw = intent.yaw
+		me.view_pitch = intent.pitch
+		var y := deg_to_rad(intent.yaw)
+		var forward := Vector3(-sin(y), 0.0, -cos(y))
+		var right := Vector3(cos(y), 0.0, -sin(y))
+		me.position += (right * intent.move.x + forward * intent.move.y) * 4.0 * TICK
+		trail.append(me.position)
+		t += TICK
+	return trail
+
+
+func _test_route() -> void:
+	_section("roaming: a route from the world is walked corner by corner")
+	var goal := Vector3(10.0, 0.0, 0.0)
+	var straight := DotBotWorld.new()
+	straight.waypoints_fn = func() -> PackedVector3Array: return PackedVector3Array([goal])
+	var plain := _walk_roam(straight, 1.5)
+	var off_line := 0.0
+	for at in plain:
+		off_line = maxf(off_line, absf(at.z))
+	_check(plain[plain.size() - 1].x > 4.0 and off_line < 1.0, "with no route it walks straight at the waypoint", "x %.1f, %.1f m off the line" % [plain[plain.size() - 1].x, off_line])
+
+	var asked := [0]
+	var routed := DotBotWorld.new()
+	routed.waypoints_fn = func() -> PackedVector3Array: return PackedVector3Array([goal])
+	# Round the end of a wall standing between the bot and the waypoint.
+	routed.route_fn = func(_from: Vector3, to: Vector3) -> PackedVector3Array:
+		asked[0] += 1
+		return PackedVector3Array([Vector3(0.0, 0.0, 6.0), Vector3(8.0, 0.0, 6.0), to])
+	var trail := _walk_roam(routed, 7.0)
+	var rounded := false
+	var arrived := false
+	for at in trail:
+		rounded = rounded or (at.z > 5.0 and at.x < 1.5)
+		arrived = arrived or (rounded and at.distance_to(goal) < 2.5)
+	_check(rounded, "with a route it goes to the first corner first, not at the waypoint")
+	_check(arrived and asked[0] == 1, "and on to the waypoint, asking for the route once", "asked %d" % asked[0])
 	_done()
 
 
