@@ -27,7 +27,8 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_aim.gd` | `DotBotAim`: the view, the aim error, the reaction and the trigger; the brain's, and a game with its own decisions uses it alone |
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
 | `addons/dot_bot/runtime/dot_bot_roster.gd` | `DotBotRoster`: from the bots there are to the number wanted, named |
-| `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels |
+| `addons/dot_bot/runtime/dot_bot_nav.gd`, `dot_bot_hiding.gd`, `dot_bot_search.gd` | for hiding games: a navigation mesh baked from a map's colliders; places scored by sight lines and picked apart; a seeker's memory of the places |
+| `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels, hiding, searching, a baked path |
 
 ## Running and testing
 
@@ -50,6 +51,8 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 - A caller of `DotBotAim` engages every tick it sees its target; a gap over 0.25 s is a lost target (a re-sight within 1.5 s reacts in half the time), over that a new engagement. [design](docs/design.md#the-fight)
 - Randomness is the bot's own `DotRandomStream` (seeded from its id), never `randf`; the clock is the caller's `now`. [design](docs/design.md#determinism)
 - Nightmare's reaction stays above 0.1 s and its aim floor above 0. [presets](docs/presets.md#what-each-preset-is)
+- `DotBotNav.bake` gets the bodies that never move (a door baked shut is a wall on the mesh) and runs synchronous iterations, so it answers on the tick it baked and a seeded round replays the same. [design](docs/design.md#hiding-and-searching)
+- `DotBotSearch` crosses a place off only when the seeker has had it in view; nothing tells it where a hider is. [design](docs/design.md#hiding-and-searching)
 
 ## Where a game plugs in
 
@@ -62,6 +65,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | How a bot with a game's own decisions aims and shoots | `DotBotAim`: `view_from`, `engage` every tick it sees the target, `track` or `look_at_point`, `trigger`, `hurt` |
 | Its commands | `DotBotIntent.write_move` / `write_fire` (a game's throw button by constant name) |
 | Its name | `DotBotNames.pick`, or `DotBotRoster.pool` / `prefix` |
+| Hiding and seeking | `DotBotNav` (paths), `DotBotHiding.survey` / `choose` / `flee_spot`, `DotBotSearch` |
 | How many | dot-server's `DotBotQuota` for the number, `DotBotRoster.keep` to reach it; `solo_wanted` for one person |
 
-Deliberately not here: pathfinding (the brain walks straight at waypoints and hops when stuck; a game with a navigation graph hands it nearer waypoints), weapon choice, game-specific roles (hide, seek, race, survive; each game's own brain builds on this one), chat.
+Deliberately not here: pathfinding inside the brain (it walks straight at waypoints and hops when stuck; a game with a graph hands it nearer waypoints, and a hiding game paths with `DotBotNav` itself), weapon choice, game-specific roles (hide, seek, race, survive; each game's own brain builds on this one), chat.

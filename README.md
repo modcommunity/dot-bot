@@ -80,6 +80,21 @@ roster.keep(quota.wanted(humans, max_players), bot_ids,
     names_in_use)
 ```
 
+### Hiding, searching and walking a map
+For games where bots hide and seek rather than fight, three helpers sit beside the brain. `DotBotNav` bakes a navigation mesh from your map's colliders when the map is built (pass the bodies that never move, so a door baked shut is not a wall) and gives paths and seeded random points. `DotBotHiding` scores places by how many of the map's sight lines reach them, picks one apart from the other hiders, and finds somewhere out of a seeker's sight to run to. `DotBotSearch` is a seeker's memory: the likely places first, crossed off once looked at, and the places near a sound put back on the list.
+
+```gdscript
+var nav := DotBotNav.new()
+nav.bake(map, {"radius": 0.35, "height": 0.95, "climb": 0.4}, 0, [walls_body, furniture_body])
+var spots := DotBotHiding.survey(candidates, watchers, line_of_sight)    # once per map
+var spot := DotBotHiding.choose(spots, me, seeker_starts, taken, stream, settings.profile.map_knowledge)
+var search := DotBotSearch.new()
+search.setup(spots, settings.profile.map_knowledge)
+var next := search.next(my_feet, now, other_seekers_targets, stream)
+```
+
+game-hide-n-seek's `game/hs_bots.gd` is the worked example.
+
 ## Settings
 `bot_difficulty` picks a preset (default `medium`). Every other setting below follows the preset unless you set it yourself; a setting you set stays when the preset changes, and `bot_settings_reset` puts the preset's values back. `bot_settings` lists every value and marks the ones you set.
 

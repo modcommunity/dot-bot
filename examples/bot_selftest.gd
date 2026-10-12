@@ -14,11 +14,11 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 116
+const CHECKS := 130
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 12
+const SECTIONS := 15
 
 const TICK := 1.0 / 64.0
 
@@ -163,6 +163,9 @@ func _run() -> void:
 	_test_turning()
 	_test_reaction_and_aim()
 	_test_duels()
+	_test_hiding()
+	_test_search()
+	await _test_nav()
 
 	print("")
 	print("%d passed, %d failed" % [_passed, _failed])
@@ -179,6 +182,93 @@ func _run() -> void:
 		get_tree().quit(1)
 		return
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+# --- Hiding, searching, walking ------------------------------------------------
+
+## A wall from (0, 0, -5) to (0, 0, 5), two metres high: what [method _wall_los] answers.
+static func _wall_los(a: Vector3, b: Vector3) -> bool:
+	if signf(a.x) == signf(b.x) or a.x == 0.0 or b.x == 0.0:
+		return true
+	var f := a.x / (a.x - b.x)
+	var hit := a.lerp(b, f)
+	return hit.y > 2.0 or absf(hit.z) > 5.0
+
+
+func _test_hiding() -> void:
+	_section("hiding: out of sight lines, apart, and away")
+	# Watchers all on the west of the wall; one spot behind it, one in front.
+	var watchers := PackedVector3Array()
+	for i in range(10):
+		watchers.append(Vector3(-6.0, 1.6, -4.0 + i))
+	var spots := DotBotHiding.survey(PackedVector3Array([Vector3(2.0, 0.0, 0.0), Vector3(-2.0, 0.0, 0.0), Vector3(2.0, 0.0, 12.0)]), watchers, _wall_los)
+	_check(is_zero_approx(float(spots[0]["exposure"])) and is_equal_approx(float(spots[1]["exposure"]), 1.0),
+		"a spot behind the wall is hidden from every watcher, one in front from all", "%s" % [spots.map(func(s: Dictionary) -> float: return s["exposure"])])
+	_check(float(spots[2]["exposure"]) > 0.5, "and one past the wall's end is seen round it")
+	var stream := DotRandomStream.new(7)
+	var best := DotBotHiding.choose(spots, Vector3.ZERO, PackedVector3Array([Vector3(-8.0, 0.0, 0.0)]), PackedVector3Array(), stream, 1.0)
+	_check((best["at"] as Vector3).is_equal_approx(Vector3(2.0, 0.0, 0.0)), "a skilled hider picks the hidden one")
+	var apart := DotBotHiding.choose(spots, Vector3.ZERO, PackedVector3Array(), PackedVector3Array([Vector3(2.0, 0.0, 0.5)]), stream, 1.0)
+	_check(not (apart["at"] as Vector3).is_equal_approx(Vector3(2.0, 0.0, 0.0)), "but not the one beside a spot another hider took")
+	var none := DotBotHiding.choose(spots, Vector3.ZERO, PackedVector3Array(), PackedVector3Array(), stream, 1.0, func(_at: Vector3) -> bool: return false)
+	_check(none.is_empty(), "and nothing when nothing is reachable")
+	var away := DotBotHiding.flee_spot(spots, Vector3(0.5, 0.0, -2.5), Vector3(-3.0, 0.0, -3.0), Vector3(-3.0, 1.6, -3.0), _wall_los, PackedVector3Array(), 25.0, 2.0)
+	_check(not away.is_empty() and (away["at"] as Vector3).x > 0.0, "running from a seeker goes behind the wall, not past it")
+	_done()
+
+
+func _test_search() -> void:
+	_section("searching: likely places first, crossed off once seen, a sound brings them back")
+	var search := DotBotSearch.new()
+	search.setup([{"at": Vector3(0.0, 0.0, -8.0), "exposure": 0.0}, {"at": Vector3(0.0, 0.0, 8.0), "exposure": 1.0}], 0.5)
+	var stream := DotRandomStream.new(3)
+	var first := search.next(Vector3.ZERO, 0.0, PackedVector3Array(), stream)
+	_check((first["at"] as Vector3).z < 0.0, "with map knowledge the hidden place is first")
+	var claimed := search.next(Vector3.ZERO, 0.0, PackedVector3Array([Vector3(0.0, 0.0, -8.0)]), stream)
+	_check((claimed["at"] as Vector3).z > 0.0, "and another seeker's place is left to them")
+	var seen := search.observe(Vector3(0.0, 1.6, 0.0), Vector3(0.0, 0.0, -1.0), 110.0, 50.0, func(_a: Vector3, _b: Vector3) -> bool: return true, 1.0)
+	_check(seen == 1 and search.unlooked(1.0) == 1, "looking at it crosses it off, and only what is in the cone")
+	search.heard(Vector3(0.0, 0.0, -7.0), 2.0)
+	_check(search.unlooked(2.0) == 2, "a sound near it puts it back")
+	_done()
+
+
+func _test_nav() -> void:
+	_section("walking: a mesh baked from colliders, a path round a wall")
+	var root := Node3D.new()
+	add_child(root)
+	var still := StaticBody3D.new()
+	root.add_child(still)
+	for part: Array in [[Vector3(30.0, 0.2, 30.0), Vector3(0.0, -0.1, 0.0)], [Vector3(0.4, 3.0, 20.0), Vector3(0.0, 1.5, -4.0)]]:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = part[0]
+		shape.shape = box
+		shape.position = part[1]
+		still.add_child(shape)
+	# A "door" body across the gap: not passed in, so not baked.
+	var door := StaticBody3D.new()
+	root.add_child(door)
+	var panel := CollisionShape3D.new()
+	var slab := BoxShape3D.new()
+	slab.size = Vector3(0.4, 3.0, 8.0)
+	panel.shape = slab
+	panel.position = Vector3(0.0, 1.5, 10.0)
+	door.add_child(panel)
+	await get_tree().physics_frame
+	var nav := DotBotNav.new()
+	var baked := nav.bake(root, {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [still])
+	_check(baked.ok and nav.is_ready(), "it bakes and is ready on the same tick", str(baked.error.message if not baked.ok else ""))
+	var length := nav.path_length(Vector3(-5.0, 0.0, -10.0), Vector3(5.0, 0.0, -10.0))
+	_check(length > 12.0 and length < INF, "the path goes round the wall's end, not through it (10 m straight)", "%.1f m" % length)
+	var through := nav.path_length(Vector3(-5.0, 0.0, 10.0), Vector3(5.0, 0.0, 10.0))
+	_check(through < 12.0, "and through the doorway whose door was left out of the bake", "%.1f m" % through)
+	var a := nav.random_point(DotRandomStream.new(9))
+	var b := nav.random_point(DotRandomStream.new(9))
+	_check(a.is_equal_approx(b) and absf(a.y) < 0.5, "a random point is on the floor, the same for the same seed")
+	nav.clear()
+	root.queue_free()
+	_done()
 
 
 # --- Profile ---------------------------------------------------------------------
