@@ -47,6 +47,13 @@ var projectile_speed_fn: Callable = Callable()
 ## map with walls between its waypoints is not walked into the walls.
 var route_fn: Callable = Callable()
 
+## [code](from: Vector3, to: Vector3) -> Dictionary[/code]: a route that may ride, as
+## [method DotBotNav.route] answers (`points`, and `rides`: per point the id of the ride edge that
+## starts there, -1 for a walked corner). Unset, [method route_detail] is [member route_fn]'s
+## corners, every one walked. The brain says when it reaches a ride's start
+## ([member DotBotIntent.ride]); the game rides it.
+var route_detail_fn: Callable = Callable()
+
 ## Recent sounds: dictionaries with position, loudness (1 is a gunshot), source (an id), at
 ## and seq.
 var sounds: Array[Dictionary] = []
@@ -71,6 +78,18 @@ func waypoints() -> PackedVector3Array:
 
 func route(from: Vector3, to: Vector3) -> PackedVector3Array:
 	return route_fn.call(from, to) if route_fn.is_valid() else PackedVector3Array()
+
+
+## A route that may ride: see [member route_detail_fn]. A subclass that overrides [method route]
+## and not this gets its corners, all walked.
+func route_detail(from: Vector3, to: Vector3) -> Dictionary:
+	if route_detail_fn.is_valid():
+		return route_detail_fn.call(from, to)
+	var points := route(from, to)
+	var rides := PackedInt32Array()
+	rides.resize(points.size())
+	rides.fill(-1)
+	return {"points": points, "rides": rides}
 
 
 func projectile_speed(shooter: DotBotContact) -> float:

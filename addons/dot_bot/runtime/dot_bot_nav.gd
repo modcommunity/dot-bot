@@ -52,6 +52,15 @@ var _map: RID = RID()
 var _synced: bool = false
 var _region: RID = RID()
 
+## Ride edges: `{"id", "from", "to", "cost", "rid"}`, linked into the map whenever it is baked.
+var _rides: Array[Dictionary] = []
+## Link RID -> ride id, for [method route].
+var _ride_of_link: Dictionary = {}
+
+## Polygon index -> island, from [method islands]; empty until asked.
+var _island_of: PackedInt32Array = PackedInt32Array()
+var _islands: Array[Dictionary] = []
+
 ## Polygon index -> cumulative area, for [method random_point].
 var _areas: PackedFloat32Array = PackedFloat32Array()
 var _total_area: float = 0.0
@@ -167,6 +176,9 @@ func _take_in() -> DotResult:
 	NavigationServer3D.map_set_use_async_iterations(_map, false)
 	NavigationServer3D.region_set_use_async_iterations(_region, false)
 	NavigationServer3D.region_set_navigation_mesh(_region, mesh)
+	NavigationServer3D.map_set_link_connection_radius(_map, LINK_RADIUS)
+	for ride in _rides:
+		_link(ride)
 	NavigationServer3D.map_force_update(_map)
 	_index_areas()
 
@@ -255,6 +267,9 @@ func random_point(stream: DotRandomStream) -> Vector3:
 func _notification(what: int) -> void:
 	# The RIDs by hand: a method call on an object being deleted finds it already gone.
 	if what == NOTIFICATION_PREDELETE:
+		for ride in _rides:
+			if (ride["rid"] as RID).is_valid():
+				NavigationServer3D.free_rid(ride["rid"])
 		if _region.is_valid():
 			NavigationServer3D.free_rid(_region)
 		if _map.is_valid():
@@ -262,6 +277,9 @@ func _notification(what: int) -> void:
 
 
 func clear() -> void:
+	_unlink_all()
+	_island_of = PackedInt32Array()
+	_islands.clear()
 	if _region.is_valid():
 		NavigationServer3D.free_rid(_region)
 	if _map.is_valid():
@@ -289,6 +307,238 @@ func _index_areas() -> void:
 		_areas.append(_total_area)
 
 
+# --- Ride edges ----------------------------------------------------------------
+
+## How far a ride edge's ends may be from the mesh and still join it, metres.
+const LINK_RADIUS := 1.5
+
+## Adds a one-way edge from [param from] to [param to] that is not walked but ridden (a surf ramp
+## from one platform to another, a drop), under [param id]. [method route] goes over it when it is
+## the cheaper way and says where; the game rides it. [param cost] multiplies its length the way a
+## walked metre counts. Kept across a re-bake; [method clear_rides] drops them.
+##
+## [b]A navigation link, because the mesh cannot hold a ramp.[/b] A face steeper than the slope
+## limit is never ground, so the bake leaves every surf ramp out and a combat surf map is islands:
+## a walked route to the far side ends at the edge of this one. A link joins two islands in the
+## navigation server's own search, so the cheapest way is still one query.
+func add_ride(from: Vector3, to: Vector3, id: int, cost: float = 1.0) -> void:
+	var ride := {"id": id, "from": from, "to": to, "cost": cost, "rid": RID()}
+	_rides.append(ride)
+	if _map.is_valid():
+		_link(ride)
+		NavigationServer3D.map_force_update(_map)
+
+
+## The ride edges added, as `{"id", "from", "to", "cost"}`.
+func rides() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for ride in _rides:
+		out.append({"id": ride["id"], "from": ride["from"], "to": ride["to"], "cost": ride["cost"]})
+	return out
+
+
+func clear_rides() -> void:
+	_unlink_all()
+	_rides.clear()
+	if _map.is_valid():
+		NavigationServer3D.map_force_update(_map)
+
+
+func _link(ride: Dictionary) -> void:
+	var link := NavigationServer3D.link_create()
+	NavigationServer3D.link_set_map(link, _map)
+	NavigationServer3D.link_set_bidirectional(link, false)
+	NavigationServer3D.link_set_start_position(link, ride["from"])
+	NavigationServer3D.link_set_end_position(link, ride["to"])
+	NavigationServer3D.link_set_travel_cost(link, float(ride["cost"]))
+	ride["rid"] = link
+	_ride_of_link[link] = int(ride["id"])
+
+
+func _unlink_all() -> void:
+	for ride in _rides:
+		var rid: RID = ride["rid"]
+		if rid.is_valid():
+			NavigationServer3D.free_rid(rid)
+		ride["rid"] = RID()
+	_ride_of_link.clear()
+
+
+## A way from [param from] to [param to] that may ride: `{"points": PackedVector3Array, "rides":
+## PackedInt32Array}`, where `rides[i]` is the id of the ride edge that starts at `points[i]` (its
+## end is `points[i + 1]`), or -1 for a walked corner. Empty points when unreachable.
+func route(from: Vector3, to: Vector3) -> Dictionary:
+	var out := {"points": PackedVector3Array(), "rides": PackedInt32Array()}
+	if not is_ready():
+		return out
+	var query := NavigationPathQueryParameters3D.new()
+	query.map = _map
+	query.start_position = from
+	query.target_position = to
+	query.metadata_flags = NavigationPathQueryParameters3D.PATH_METADATA_INCLUDE_TYPES | NavigationPathQueryParameters3D.PATH_METADATA_INCLUDE_RIDS
+	var result := NavigationPathQueryResult3D.new()
+	NavigationServer3D.query_path(query, result)
+	var points := result.path
+	var types := result.path_types
+	var rids := result.path_rids
+	var marks := PackedInt32Array()
+	marks.resize(points.size())
+	marks.fill(-1)
+	for i in range(points.size()):
+		if i < types.size() and types[i] == NavigationPathQueryResult3D.PATH_SEGMENT_TYPE_LINK and i < rids.size() and _ride_of_link.has(rids[i]):
+			# The link's start is the point flagged as the link; its end is the next one.
+			marks[i] = int(_ride_of_link[rids[i]])
+	# A link can be reported on both of its points: keep the first of a run.
+	for i in range(points.size() - 1, 0, -1):
+		if marks[i] >= 0 and marks[i - 1] == marks[i]:
+			marks[i] = -1
+	out["points"] = points
+	out["rides"] = marks
+	return out
+
+
+# --- Islands -------------------------------------------------------------------
+
+## The mesh's islands: polygons joined by shared edges, biggest first, as `{"index", "area",
+## "polygons": PackedInt32Array, "bounds": AABB, "centre": Vector3}`. What a walked route cannot
+## leave: on a combat surf map each platform group is one, and a ride edge joins two.
+func islands() -> Array[Dictionary]:
+	if not _islands.is_empty() or mesh == null:
+		return _islands
+	var vertices := mesh.get_vertices()
+	var count := mesh.get_polygon_count()
+	var parent := PackedInt32Array()
+	parent.resize(count)
+	for i in range(count):
+		parent[i] = i
+	var edge_owner: Dictionary = {}
+	for i in range(count):
+		var polygon := mesh.get_polygon(i)
+		for k in range(polygon.size()):
+			var a := _vertex_key(vertices[polygon[k]])
+			var b := _vertex_key(vertices[polygon[(k + 1) % polygon.size()]])
+			var key := [a, b] if str(a) < str(b) else [b, a]
+			if edge_owner.has(key):
+				_union(parent, i, int(edge_owner[key]))
+			else:
+				edge_owner[key] = i
+	var groups: Dictionary = {}
+	for i in range(count):
+		var root := _find(parent, i)
+		if not groups.has(root):
+			groups[root] = PackedInt32Array()
+		groups[root].append(i)
+	var out: Array[Dictionary] = []
+	for root: int in groups:
+		var polygons: PackedInt32Array = groups[root]
+		var area := 0.0
+		var bounds := AABB()
+		var first := true
+		var weighted := Vector3.ZERO
+		for i in polygons:
+			var polygon := mesh.get_polygon(i)
+			var a := _polygon_area(polygon, vertices)
+			area += a
+			var centre := Vector3.ZERO
+			for v in polygon:
+				centre += vertices[v]
+				if first:
+					bounds = AABB(vertices[v], Vector3.ZERO)
+					first = false
+				else:
+					bounds = bounds.expand(vertices[v])
+			weighted += centre / float(polygon.size()) * a
+		out.append({"area": area, "polygons": polygons, "bounds": bounds, "centre": weighted / maxf(area, 0.0001)})
+	out.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return float(x["area"]) > float(y["area"]))
+	_island_of = PackedInt32Array()
+	_island_of.resize(count)
+	for index in range(out.size()):
+		out[index]["index"] = index
+		for i: int in out[index]["polygons"]:
+			_island_of[i] = index
+	_islands = out
+	return _islands
+
+
+## The island [param at] stands on (the polygon nearest it, within [param reach] metres), or -1.
+func island_at(at: Vector3, reach: float = 1.0) -> int:
+	var polygon := polygon_at(at, reach)
+	if polygon < 0:
+		return -1
+	var _all := islands()
+	return _island_of[polygon] if polygon < _island_of.size() else -1
+
+
+## The index of the polygon under [param at] (within [param reach] metres up or down, and inside
+## its outline seen from above), or -1. A linear scan: for tools and for a course's goal test,
+## not for every bot every tick.
+func polygon_at(at: Vector3, reach: float = 1.0) -> int:
+	if mesh == null:
+		return -1
+	var vertices := mesh.get_vertices()
+	var best := -1
+	var best_dy := INF
+	for i in range(mesh.get_polygon_count()):
+		var polygon := mesh.get_polygon(i)
+		for k in range(1, polygon.size() - 1):
+			var a := vertices[polygon[0]]
+			var b := vertices[polygon[k]]
+			var c := vertices[polygon[k + 1]]
+			var height := _height_in(at, a, b, c)
+			if is_nan(height):
+				continue
+			var dy := absf(at.y - height)
+			if dy <= reach and dy < best_dy:
+				best_dy = dy
+				best = i
+	return best
+
+
+## The height of the triangle (a, b, c) under [param at] seen from above, or NAN outside it.
+static func _height_in(at: Vector3, a: Vector3, b: Vector3, c: Vector3) -> float:
+	var v0 := Vector2(c.x - a.x, c.z - a.z)
+	var v1 := Vector2(b.x - a.x, b.z - a.z)
+	var v2 := Vector2(at.x - a.x, at.z - a.z)
+	var d00 := v0.dot(v0)
+	var d01 := v0.dot(v1)
+	var d11 := v1.dot(v1)
+	var d20 := v2.dot(v0)
+	var d21 := v2.dot(v1)
+	var denom := d00 * d11 - d01 * d01
+	if absf(denom) < 1e-9:
+		return NAN
+	var u := (d11 * d20 - d01 * d21) / denom
+	var v := (d00 * d21 - d01 * d20) / denom
+	if u < -0.001 or v < -0.001 or u + v > 1.001:
+		return NAN
+	return a.y + u * (c.y - a.y) + v * (b.y - a.y)
+
+
+static func _vertex_key(v: Vector3) -> Vector3i:
+	return Vector3i(roundi(v.x * 100.0), roundi(v.y * 100.0), roundi(v.z * 100.0))
+
+
+static func _find(parent: PackedInt32Array, i: int) -> int:
+	while parent[i] != i:
+		parent[i] = parent[parent[i]]
+		i = parent[i]
+	return i
+
+
+static func _union(parent: PackedInt32Array, a: int, b: int) -> void:
+	var ra := _find(parent, a)
+	var rb := _find(parent, b)
+	if ra != rb:
+		parent[maxi(ra, rb)] = mini(ra, rb)
+
+
+static func _polygon_area(polygon: PackedInt32Array, vertices: PackedVector3Array) -> float:
+	var area := 0.0
+	for k in range(1, polygon.size() - 1):
+		area += (vertices[polygon[k]] - vertices[polygon[0]]).cross(vertices[polygon[k + 1]] - vertices[polygon[0]]).length() * 0.5
+	return area
+
+
 func describe() -> Dictionary:
 	return {
 		"ready": is_ready() if is_baked() else false,
@@ -296,6 +546,7 @@ func describe() -> Dictionary:
 		"polygons": mesh.get_polygon_count() if mesh != null else 0,
 		"area": snappedf(_total_area, 0.1),
 		"bake_ms": snappedf(bake_ms, 0.1),
+		"rides": _rides.size(),
 	}
 
 

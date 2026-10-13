@@ -12,6 +12,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | --- | --- |
 | [docs/README.md](docs/README.md) | the index |
 | [docs/design.md](docs/design.md) | why a separate addon, what the brain may know, the fight, the view, determinism |
+| [docs/surfing.md](docs/surfing.md) | anything in `runtime/surf/`, ride edges, `DotBotIntent.ride` |
 | [docs/presets.md](docs/presets.md) | changing a preset's number or adding a setting; what each preset is meant to be, and the measured numbers |
 | [docs/history.md](docs/history.md) | the bugs, and how each looked |
 
@@ -28,7 +29,8 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
 | `addons/dot_bot/runtime/dot_bot_roster.gd` | `DotBotRoster`: from the bots there are to the number wanted, named |
 | `addons/dot_bot/runtime/dot_bot_nav.gd`, `dot_bot_hiding.gd`, `dot_bot_search.gd` | for hiding games: a navigation mesh baked from a map's colliders; places scored by sight lines and picked apart; a seeker's memory of the places |
-| `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels, hiding, searching, a baked path |
+| `addons/dot_bot/runtime/surf/` | surf bots: `DotBotSurfCourse` (one ride), `DotBotSurfPlanner` (the search on the motor, the cache's repair rounds), `DotBotSurfPilot` (the run-time policy and veto), `DotBotSurfRide` (one bot riding one edge while it aims) |
+| `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels, hiding, searching, a baked path, a surf ride on a toy simulator, a ride edge |
 
 ## Running and testing
 
@@ -54,6 +56,9 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 - `DotBotNav.bake` gets the bodies that never move (a door baked shut is a wall on the mesh) and runs synchronous iterations, so it answers on the tick it baked and a seeded round replays the same. [design](docs/design.md#hiding-and-searching)
 - `DotBotNav.bake_in_background` is for a map too big to bake in a tick (seconds); it gives up that determinism, and is `bake` without threads. [design](docs/design.md#hiding-and-searching)
 - `DotBotSearch` crosses a place off only when the seeker has had it in view; nothing tells it where a hider is. [design](docs/design.md#hiding-and-searching)
+- The surf simulator is duck typed (dot-player-controller's `DotFpsSimulator`); `runtime/surf/` names no other addon. A cache is planned by a tool, never at map load, and replanned after a movement or collision change. [surfing](docs/surfing.md)
+- A riding bot's legs are the pilot's, its view and trigger the brain's: `DotBotSurfRide.steer` writes the move for the intent's own yaw and never crouches or walks. [surfing](docs/surfing.md#riding-while-fighting)
+- Never `(dict[k] as PackedInt32Array).append(x)`: the cast is a copy and the append is lost. [surfing](docs/surfing.md#traps)
 
 ## Where a game plugs in
 
@@ -67,6 +72,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | Its commands | `DotBotIntent.write_move` / `write_fire` (a game's throw button by constant name) |
 | Its name | `DotBotNames.pick`, or `DotBotRoster.pool` / `prefix` |
 | Hiding and seeking | `DotBotNav` (paths), `DotBotHiding.survey` / `choose` / `flee_spot`, `DotBotSearch` |
+| Surfing | `DotBotSurfCourse` (a game's course: goals, pits, or override `event_at`), `DotBotSurfPlanner.build` in a tool, `DotBotNav.add_ride` + `DotBotWorld.route_detail_fn`, `DotBotSurfRide` per bot |
 | How many | dot-server's `DotBotQuota` for the number, `DotBotRoster.keep` to reach it; `solo_wanted` for one person |
 
 Deliberately not here: pathfinding inside the brain (it walks straight at waypoints and hops when stuck; a game with a graph hands it nearer waypoints, and a hiding game paths with `DotBotNav` itself), weapon choice, game-specific roles (hide, seek, race, survive; each game's own brain builds on this one), chat.

@@ -94,7 +94,11 @@ var _strafe_until: float = -INF
 var _waypoint: Vector3 = Vector3.INF
 # The world's route to where the bot is walking, corner by corner, and the goal it was asked for.
 var _route: PackedVector3Array = PackedVector3Array()
+# Per corner of _route, the ride edge that starts there, or -1.
+var _route_rides: PackedInt32Array = PackedInt32Array()
 var _route_goal: Vector3 = Vector3.INF
+# The ride a corner just reached, for this tick's intent.
+var _ride_reached: int = -1
 var _stuck_at: float = 0.0
 var _stuck_from: Vector3 = Vector3.INF
 
@@ -132,6 +136,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_forget_target()
 		_waypoint = Vector3.INF
 		_route_goal = Vector3.INF
+		_ride_reached = -1
 		_heard_at = -INF
 		_hurt_at = -INF
 
@@ -154,8 +159,20 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	out.yaw = aim.yaw
 	out.pitch = aim.pitch
 	out.target_id = target_id if _visible else -1
+	out.ride = _ride_reached
+	_ride_reached = -1
 	last = out
 	return out
+
+
+## The game's rider is done with a ride ([member DotBotIntent.ride]): [param arrived] or not, the
+## route is asked for again from where the bot is now, because a ride lands anywhere on the far
+## platform (or, failing, wherever the pit sent it).
+func ride_ended(_arrived: bool) -> void:
+	_route_goal = Vector3.INF
+	_route = PackedVector3Array()
+	_route_rides = PackedInt32Array()
+	_stuck_from = Vector3.INF
 
 
 ## How long a lost target or a sound holds the bot's attention: its whole memory when it is
@@ -436,9 +453,16 @@ func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> 
 func _toward(me: DotBotContact, world: DotBotWorld, goal: Vector3) -> Vector2:
 	if goal != _route_goal:
 		_route_goal = goal
-		_route = world.route(me.position, goal) if world != null else PackedVector3Array()
+		var detail := world.route_detail(me.position, goal) if world != null else {}
+		_route = detail.get("points", PackedVector3Array())
+		_route_rides = detail.get("rides", PackedInt32Array())
 	var here := Vector2(me.position.x, me.position.z)
 	while not _route.is_empty() and here.distance_to(Vector2(_route[0].x, _route[0].z)) < CORNER:
+		# A corner that starts a ride edge: say so, and the game takes the legs from here.
+		if not _route_rides.is_empty():
+			if _route_rides[0] >= 0:
+				_ride_reached = _route_rides[0]
+			_route_rides.remove_at(0)
 		_route.remove_at(0)
 	var at := _route[0] if not _route.is_empty() else goal
 	var flat := Vector2(at.x, at.z) - here

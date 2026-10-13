@@ -28,6 +28,12 @@ var walk: bool = false
 ## Throw a grenade (or whatever a game's throwable is) along the view this tick.
 var throw: bool = false
 
+## The ride edge the bot's route reached this tick ([method DotBotWorld.route_detail]), or -1. A
+## game that rides it hands the movement half of the command to its surf pilot until the ride
+## ends, keeping the view and the trigger the brain's, and tells the brain
+## ([method DotBotBrain.ride_ended]).
+var ride: int = -1
+
 ## Whom the bot is fighting, or -1.
 var target_id: int = -1
 
@@ -82,5 +88,5 @@ static func direction(p_yaw: float, p_pitch: float) -> Vector3:
 func describe() -> Dictionary:
 	return {
 		"state": state, "target": target_id, "yaw": snappedf(yaw, 0.1), "pitch": snappedf(pitch, 0.1),
-		"move": move, "fire": fire, "crouch": crouch, "jump": jump, "throw": throw,
+		"move": move, "fire": fire, "crouch": crouch, "jump": jump, "throw": throw, "ride": ride,
 	}
