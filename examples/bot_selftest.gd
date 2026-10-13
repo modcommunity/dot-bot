@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 152
+const CHECKS := 153
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
@@ -1064,6 +1064,27 @@ func _test_surf() -> void:
 		"the cache reads back from its rows", "%d entries" % pilot.size())
 	pilot.sim = sim
 	pilot.score = course.score
+
+	# The lookup skips a neighbour cell no entry of which can be nearer than the best so far.
+	# Armed by skipping on `>= 0.0` (every neighbour is skipped and some answers move).
+	var agree := 0
+	var asked := 0
+	for s: ToyState in _toy_starts(40, 5):
+		for t in range(0, 200, 25):
+			var probe := s.duplicate_state()
+			probe.position += Vector3(0.37 * float(t % 7) - 1.1, 0.0, 0.29 * float(t % 5) - 0.6)
+			asked += 1
+			var best := -1
+			var best_d := INF
+			for i in range(pilot.size()):
+				var d := pilot._distance(i, probe.position, probe.velocity)
+				if d < best_d:
+					best_d = d
+					best = i
+			var got := pilot.nearest(probe)
+			if got == best or is_equal_approx(pilot._distance(got, probe.position, probe.velocity), best_d):
+				agree += 1
+	_check(agree == asked, "the cache's lookup finds the entry a scan of every entry finds", "%d of %d" % [agree, asked])
 
 	var tries := _toy_starts(20, 4)
 	var arrived := [0, 0]

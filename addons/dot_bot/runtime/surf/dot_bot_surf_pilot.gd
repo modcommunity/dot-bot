@@ -274,14 +274,33 @@ func nearest(state: Variant) -> int:
 	var best := -1
 	var best_d := INF
 	var centre := _cell(position)
+	# The bot's own cell first, so the best so far is a near one before any neighbour is opened.
+	var own: Variant = _grid.get(centre)
+	if own != null:
+		for i: int in own:
+			var d := _distance(i, position, velocity)
+			if d < best_d:
+				best_d = d
+				best = i
 	for radius in [1, 2]:
 		for dx in range(-radius, radius + 1):
 			for dy in range(-radius, radius + 1):
 				for dz in range(-radius, radius + 1):
+					if dx == 0 and dy == 0 and dz == 0:
+						continue
 					if radius == 2 and absi(dx) < 2 and absi(dy) < 2 and absi(dz) < 2:
 						continue
-					var bucket: Variant = _grid.get(centre + Vector3i(dx, dy, dz))
+					var key := centre + Vector3i(dx, dy, dz)
+					var bucket: Variant = _grid.get(key)
 					if bucket == null:
+						continue
+					# A cell no entry of which can beat the best so far is skipped: the distance is
+					# at least the position part, and that is at least the distance to the cell's
+					# box. The answer is the one the full scan gives; on a ride line most
+					# of the 26 neighbours hold hundreds of entries and are this far away. It was
+					# most of a forecast's cost (game-g2gfast: 390 us a simulated tick, 90 of it
+					# the motor).
+					if _box_distance_squared(key, position) >= best_d:
 						continue
 					for i: int in bucket:
 						var d := _distance(i, position, velocity)
@@ -566,6 +585,14 @@ func _distance(i: int, position: Vector3, velocity: Vector3) -> float:
 	var dp := Vector3(entries[o], entries[o + 1], entries[o + 2]) - position
 	var dv := (Vector3(entries[o + 3], entries[o + 4], entries[o + 5]) - velocity) * VELOCITY_SECONDS
 	return dp.length_squared() + dv.length_squared()
+
+
+## The squared distance from [param p] to cell [param key]'s box (0 inside it).
+func _box_distance_squared(key: Vector3i, p: Vector3) -> float:
+	var lo := Vector3(key) * CELL
+	var hi := lo + Vector3(CELL, CELL, CELL)
+	var q := p.clamp(lo, hi)
+	return q.distance_squared_to(p)
 
 
 func _cell(p: Vector3) -> Vector3i:
