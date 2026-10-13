@@ -20,7 +20,8 @@ extends RefCounted
 ## and in the air the motor reads nothing of the view but the wish it makes with the keys. So the
 ## keys are worked out for the brain's own view ([method DotBotSurfPilot.move_toward]): the bot
 ## looks at its target and still holds the ramp. On the ground the view also scales a backward
-## key, which a ride's first steps off the platform feel; the veto is what absorbs it.
+## key, so for the run to the ramp the view is the ride's own; it is the brain's again from the
+## moment the bot leaves the ground.
 
 # No log channel: the game says what a ride did.
 
@@ -88,6 +89,12 @@ func steer(state: Variant, intent: DotBotIntent, now_tick: int) -> int:
 	if now_tick - began > max_ticks:
 		return _end(TIMED_OUT)
 	var action := pilot.action(state)
+	if DotBotSurfPilot.jumps(action) or (state.has_method(&"is_grounded") and state.is_grounded()):
+		# Running to the ramp, and jumping, the view goes where the legs go: on the ground a key
+		# held backward is slower, and a jump beside a wall pushes off along the view (a wall
+		# jump), so either made for a view elsewhere is not the ride that was planned, and it
+		# fell (game-arena's surf_ski_2, whose wall moves are on).
+		intent.yaw = DotBotSurfPilot.heading_of(state, pilot.reference_yaw)
 	intent.move = DotBotSurfPilot.move_toward(DotBotSurfPilot.wish_yaw(action, state, pilot.reference_yaw), intent.yaw)
 	intent.jump = DotBotSurfPilot.jumps(action)
 	intent.crouch = false

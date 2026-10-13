@@ -30,8 +30,11 @@ const EVENT_GOAL := 1
 const EVENT_PIT := 2
 const EVENT_BELOW := 3
 
-## How much one metre of energy is worth against one metre of progress.
+## How much one metre of energy is worth against one metre of progress, and how much a metre
+## of progress is worth. A goal off the ramp's own line pulls a greedy beam off the ramp's side;
+## a small progress weight lets the ramps lead and the goal decide only between their ends.
 var energy_weight: float = 0.5
+var progress_weight: float = 1.0
 ## Gravity the energy is measured under, m/s².
 var gravity: float = 15.24
 ## How far under the lowest goal a state is past saving, metres (1024 genre units).
@@ -121,7 +124,7 @@ func score(state: Variant) -> float:
 	var v: Vector3 = state.velocity
 	var energy := p.y + v.length_squared() / (2.0 * gravity)
 	var penalty := unsupported_penalty if unsupported_fn.is_valid() and bool(unsupported_fn.call(state)) else 0.0
-	return progress(p) + energy_weight * energy - penalty
+	return progress_weight * progress(p) + energy_weight * energy - penalty
 
 
 ## Metres along the line (or [member guide]) from the start.

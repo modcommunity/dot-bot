@@ -46,12 +46,24 @@ extends RefCounted
 ## the planner's search and a candidate in the veto. Relative to the velocity, because the same
 ## action means the same thing on the left face of a ramp at 600 u/s and at 900 u/s, which is
 ## what lets one recorded action be reused from a nearby state.
+##
+## [b]Two more are anchored to the ride, not the velocity[/b] (index [constant ANCHORED_FROM] on):
+## a wish square to the course's reference yaw, either side. A wish square to the velocity turns
+## the velocity with it, so held for long it circles off a ramp; a surfer holds the face with a
+## wish that stays put while the velocity swings under it. On game-g2gfast's stage the beam made
+## that by alternating; down game-arena's combat surf ramps, whose first metres are nearly upright,
+## it never did, and only a held world-fixed wish landed (2026-10-13). Appended, so a cache's
+## action numbers keep their meaning.
 const ACTIONS: Array = [
 	[NAN, false],
 	[-90.0, false], [-60.0, false], [-30.0, false], [0.0, false],
 	[30.0, false], [60.0, false], [90.0, false],
 	[0.0, true],
+	[-90.0, false], [90.0, false],
 ]
+
+## Actions from this index are anchored to the reference yaw, not the heading.
+const ANCHORED_FROM := 9
 
 ## Below this horizontal speed (m/s, about 60 genre u/s) the velocity has no direction worth
 ## steering by, and an action is taken relative to the reference yaw instead.
@@ -66,6 +78,10 @@ const STRIDE := 7
 
 ## How far (metres, and m/s) the real state may be from the forecast and still be it.
 const FORECAST_SLACK := 0.01
+## The fewest ticks between two fresh forecasts. A bot whose game turns its keys for its own view
+## walks off the forecast on the ground every tick (a backward key is slower there), and a fresh
+## 192-tick forecast every tick was half a core (game-arena, 2026-10-13).
+const RESYNC_GAP := 16
 
 var entries: PackedFloat32Array = PackedFloat32Array()
 ## Per entry: the index one past the last entry of its ride.
@@ -115,6 +131,8 @@ var _end_override: int = -1
 var _end_override_left: int = 0
 var _end_event: int = 0
 var _cooldown: int = 0
+var _hopeless_streak: int = 0
+var _forecast_tick: int = -1000
 
 
 # --- The cache -------------------------------------------------------------------
@@ -200,7 +218,9 @@ static func heading_of(state: Variant, reference: float) -> float:
 ## The yaw the wish of [param action] points along from [param state], or NAN for no key.
 static func wish_yaw(action: int, state: Variant, reference: float) -> float:
 	var angle: float = ACTIONS[action][0]
-	return NAN if is_nan(angle) else heading_of(state, reference) + angle
+	if is_nan(angle):
+		return NAN
+	return (reference if action >= ANCHORED_FROM else heading_of(state, reference)) + angle
 
 
 ## The stick that points the wish along [param yaw] for a view at [param view_yaw]: (x right,
@@ -225,7 +245,8 @@ static func command_for(p_sim: Variant, action: int, state: Variant, reference: 
 	var angle: float = ACTIONS[action][0]
 	var move := Vector2.ZERO
 	if not is_nan(angle):
-		var a := deg_to_rad(angle)
+		# The wish's angle from the view: from the heading, or, anchored, from the reference.
+		var a := deg_to_rad(angle + (reference - heading if action >= ANCHORED_FROM else 0.0))
 		move = Vector2(-sin(a), cos(a))
 	return p_sim.command(heading, move, bool(ACTIONS[action][1]))
 
@@ -241,6 +262,8 @@ func reset() -> void:
 	_following = -1
 	_tick = 0
 	_cooldown = 0
+	_hopeless_streak = 0
+	_forecast_tick = -1000
 	_drop_forecast()
 
 
@@ -377,12 +400,17 @@ func _veto(state: Variant) -> void:
 		# No way out in sight: put the fall off as long as possible, which is the most time for
 		# the next check to find one.
 		hopeless += 1
+		_hopeless_streak += 1
 		best = longest
+	else:
+		_hopeless_streak = 0
 	if best >= 0:
 		_override = best
 		_override_left = check_every
 		_tracked_left = 0
-	_cooldown = check_every
+	# After a veto that found no way out, the next waits longer (twice, four times, at most eight
+	# times as long): a doomed ride vetoing every check_every ticks was most of a hard edge's cost.
+	_cooldown = check_every * (1 << mini(_hopeless_streak, 3))
 
 
 ## The rolling veto: keeps the forecast while the real state is on it, extends it by a tick at
@@ -397,8 +425,12 @@ func _keep_forecast(state: Variant) -> void:
 	if _end != null and not on_it and _tick > 0:
 		resyncs += 1
 	if not on_it:
-		if _cooldown > 0 and _end != null:
-			# Just vetoed and still off the forecast: wait the hold out, as the plain check does.
+		if _end != null and (_cooldown > 0 or _tick - _forecast_tick < RESYNC_GAP):
+			# Just vetoed, or just forecast: wait, as the plain check does.
+			return
+		if state.has_method(&"is_grounded") and state.is_grounded():
+			# Walking to the ramp: nothing to fall from yet, and the forecast follows when it leaves.
+			_drop_forecast()
 			return
 		_forecast(state, _override if _override_left > 0 else -1, _override_left)
 		if _end_event != DotBotSurfCourse.EVENT_NONE and _end_event != DotBotSurfCourse.EVENT_GOAL and _cooldown <= 0:
@@ -433,6 +465,7 @@ func _keep_forecast(state: Variant) -> void:
 ## policy, [member horizon] ticks or until it ends.
 func _forecast(state: Variant, first: int, first_left: int) -> void:
 	checks += 1
+	_forecast_tick = _tick
 	_drop_forecast()
 	_end = state.duplicate_state()
 	_end_override = first
