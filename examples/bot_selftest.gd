@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 151
+const CHECKS := 152
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
@@ -1121,6 +1121,9 @@ func _test_ride_edges() -> void:
 	var islands := nav.islands()
 	_check(baked.ok and islands.size() == 2 and nav.island_at(Vector3(0.0, 0.0, 0.0)) != nav.island_at(Vector3(20.0, 0.0, 0.0)),
 		"two floors with a gap are two islands", "%d islands, at %d and %d, %s" % [islands.size(), nav.island_at(Vector3(0.0, 0.0, 0.0)), nav.island_at(Vector3(20.0, 0.0, 0.0)), str(islands.map(func(i: Dictionary) -> String: return str(i["bounds"])))])
+	var far := nav.island_at(Vector3(20.0, 0.0, 0.0))
+	_check(nav.on_island(far, Vector3(21.0, 0.1, 1.0)) and not nav.on_island(far, Vector3(1.0, 0.1, 1.0))
+		and not nav.on_island(far, Vector3(21.0, 3.0, 1.0)), "a point is on the far island only over it and near its floor")
 	var walked := nav.route(Vector3(-2.0, 0.0, 0.0), Vector3(22.0, 0.0, 0.0))
 	var walked_points: PackedVector3Array = walked["points"]
 	_check(walked_points.is_empty() or walked_points[walked_points.size() - 1].x < 6.0,

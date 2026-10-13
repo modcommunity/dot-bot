@@ -469,6 +469,51 @@ func island_at(at: Vector3, reach: float = 1.0) -> int:
 	return _island_of[polygon] if polygon < _island_of.size() else -1
 
 
+## Whether [param at] is over island [param index] (inside one of its triangles seen from
+## above, within [param reach] metres up or down). Fast enough to ask every simulated tick: the
+## island's triangles are bucketed on a grid of [constant ISLAND_CELL] metres the first time.
+## What a ride edge's course asks of its landing.
+func on_island(index: int, at: Vector3, reach: float = 0.5) -> bool:
+	var all := islands()
+	if index < 0 or index >= all.size():
+		return false
+	var island := all[index]
+	if not island.has("grid"):
+		island["grid"] = _island_grid(island)
+	var grid: Dictionary = island["grid"]
+	var cell := Vector2i(floori(at.x / ISLAND_CELL), floori(at.z / ISLAND_CELL))
+	var bucket: Variant = grid.get(cell)
+	if bucket == null:
+		return false
+	for tri: Array in bucket:
+		var height := _height_in(at, tri[0], tri[1], tri[2])
+		if not is_nan(height) and absf(at.y - height) <= reach:
+			return true
+	return false
+
+
+## Grid cell for [method on_island], metres.
+const ISLAND_CELL := 2.0
+
+
+func _island_grid(island: Dictionary) -> Dictionary:
+	var grid: Dictionary = {}
+	var vertices := mesh.get_vertices()
+	for i: int in island["polygons"]:
+		var polygon := mesh.get_polygon(i)
+		for k in range(1, polygon.size() - 1):
+			var tri := [vertices[polygon[0]], vertices[polygon[k]], vertices[polygon[k + 1]]]
+			var lo := Vector2(minf(tri[0].x, minf(tri[1].x, tri[2].x)), minf(tri[0].z, minf(tri[1].z, tri[2].z)))
+			var hi := Vector2(maxf(tri[0].x, maxf(tri[1].x, tri[2].x)), maxf(tri[0].z, maxf(tri[1].z, tri[2].z)))
+			for cx in range(floori(lo.x / ISLAND_CELL), floori(hi.x / ISLAND_CELL) + 1):
+				for cz in range(floori(lo.y / ISLAND_CELL), floori(hi.y / ISLAND_CELL) + 1):
+					var key := Vector2i(cx, cz)
+					if not grid.has(key):
+						grid[key] = []
+					grid[key].append(tri)
+	return grid
+
+
 ## The index of the polygon under [param at] (within [param reach] metres up or down, and inside
 ## its outline seen from above), or -1. A linear scan: for tools and for a course's goal test,
 ## not for every bot every tick.

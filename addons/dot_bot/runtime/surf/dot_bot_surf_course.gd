@@ -55,6 +55,22 @@ var floor_y: float = -INF
 ## Points from the start to the goal that progress is measured along; empty for the straight
 ## line.
 var guide: PackedVector3Array = PackedVector3Array()
+## `func(state) -> bool`: whether nothing under the state could hold it (no ramp, no platform,
+## only the pit). Such a state scores [member unsupported_penalty] metres less. Unset, none is.
+##
+## [b]Why.[/b] A combat surf map's spawn sits on top of a long ramp with nothing beside it but
+## the drop to the floor teleport. A line that leaves the ramp toward the goal makes progress
+## faster than one riding it, and keeps all of its energy until it lands in the pit seconds later;
+## by then the beam had dropped every rider for it and every line died at once (game-arena's
+## surf_10x_reloaded_fixed, 2026-10-13). A staged map's pits sit right under its ramps, so
+## game-g2gfast never needed it.
+var unsupported_fn: Callable = Callable()
+## Progress as how much nearer the goal (flat) a state is than the start, rather than how far
+## along the start-to-goal line: a line past the goal is not ahead of one at it. A staged
+## map's pits catch an overshoot; a combat surf map's open floor let a line falling past its
+## landing outscore every rider.
+var toward_goal: bool = false
+var unsupported_penalty: float = 20.0
 
 var _dir: Vector3 = Vector3.FORWARD
 
@@ -104,11 +120,15 @@ func score(state: Variant) -> float:
 	var p: Vector3 = state.position
 	var v: Vector3 = state.velocity
 	var energy := p.y + v.length_squared() / (2.0 * gravity)
-	return progress(p) + energy_weight * energy
+	var penalty := unsupported_penalty if unsupported_fn.is_valid() and bool(unsupported_fn.call(state)) else 0.0
+	return progress(p) + energy_weight * energy - penalty
 
 
 ## Metres along the line (or [member guide]) from the start.
 func progress(p: Vector3) -> float:
+	if toward_goal and guide.size() < 2:
+		var flat_start := Vector2(goal_centre.x - start.x, goal_centre.z - start.z).length()
+		return flat_start - Vector2(goal_centre.x - p.x, goal_centre.z - p.z).length()
 	if guide.size() < 2:
 		return (p - start).dot(_dir)
 	var best_d := INF

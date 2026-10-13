@@ -44,6 +44,9 @@ var seconds: float = 20.0
 var repair_back: int = 128
 ## Ranked children examined, for the report.
 var expanded: int = 0
+## `func(depth: int, best: Dictionary)`, called after each step with the beam's best node
+## (`state`, `actions`, `score`): for a tool watching where a search goes. Unset, nothing.
+var trace: Callable = Callable()
 
 
 ## Searches from [param start] (not changed). Returns `{"found": bool, "actions":
@@ -84,6 +87,8 @@ func search(start: Variant, course: DotBotSurfCourse, sim: Variant) -> Dictionar
 		var ranked: Array = best.values()
 		ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
 		beam = ranked.slice(0, width)
+		if trace.is_valid():
+			trace.call(depth, beam[0])
 	return {"found": false, "actions": PackedByteArray(), "ticks": steps * hold,
 		"why": "no line reached the goal in %.0f s" % seconds}
 

@@ -14,7 +14,7 @@ extends RefCounted
 # 3: DotBotNav.bake_in_background, is_baking (a mesh baked on a worker thread).
 # 4: surfing. DotBotSurfCourse, DotBotSurfPlanner, DotBotSurfPilot, DotBotSurfRide; ride edges:
 #    DotBotNav.add_ride, rides, clear_rides, route (points and rides), islands, island_at,
-#    polygon_at; DotBotWorld.route_detail_fn and route_detail; DotBotIntent.ride;
-#    DotBotBrain.ride_ended.
+#    polygon_at, on_island; DotBotWorld.route_detail_fn and route_detail; DotBotIntent.ride;
+#    DotBotBrain.ride_ended; DotBotSurfCourse.unsupported_fn, toward_goal; DotBotSurfPlanner.trace.
 const LEVEL := 4
 const OLDEST := 1

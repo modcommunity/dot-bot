@@ -31,6 +31,10 @@ A launch that is going to fall short is decided long before it falls: with a 96-
 
 `DotBotSurfRide.steer` writes only the legs: the stick that points the pilot's wish for the brain's view (`move_toward`), jump as the action says, and never crouch or walk (either changes the hull or the speed the rides were planned with). In the air the motor reads nothing of the view but the wish the keys make, so the bot looks at its target and still holds the ramp. The brain says when its route reached a ride edge (`DotBotIntent.ride`, from `DotBotWorld.route_detail`, which `DotBotNav.route` answers once `add_ride` has linked two islands); the game rides it and calls `DotBotBrain.ride_ended`, which asks for the route again from wherever the bot ended.
 
+## A course on an open map
+
+A staged map's pits sit right under its ramps, so a line that leaves the ramp dies at once and the beam forgets it. A combat surf map has a floor teleport under everything, tens of metres down, and two things went wrong there (game-arena's surf_10x_reloaded_fixed): a line falling off the ramp toward the goal kept its energy and gained progress until it hit the floor seconds later, by which time the beam had dropped every rider for it; and a line falling past the landing scored as further along than one on it. `unsupported_fn` (nothing that could hold the state under it or ahead of it, scored `unsupported_penalty` metres down) and `toward_goal` (progress is how much nearer the goal, never past it) are the course's answers; both are off by default, so a staged map's course is unchanged. `DotBotSurfPlanner.trace` is a tool's window into a search that fails.
+
 ## Ride edges in the mesh
 
 `DotBotNav` leaves every surf ramp out (a face steeper than the slope limit is never ground), so a combat surf map bakes as islands. `add_ride(from, to, id)` is a one-way navigation link between two islands; `route` returns the corners and, per corner, the ride that starts there; `islands()` and `island_at()` are what a tool builds its edges from. Links are kept across a re-bake.
