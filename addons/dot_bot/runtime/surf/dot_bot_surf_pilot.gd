@@ -78,7 +78,7 @@ const COARSE_CELLS := 4
 const COARSE_RINGS := 3
 ## Further out than the rings reach, every this-many-th entry is looked at: such a state is
 ## falling past the ramp, and its action is a guess whichever entry it comes from.
-const SPARSE_STRIDE := 32
+const SPARSE_STRIDE := 16
 ## Floats per entry: x, y, z, vx, vy, vz, action.
 const STRIDE := 7
 
