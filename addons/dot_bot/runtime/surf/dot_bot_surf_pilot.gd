@@ -73,6 +73,12 @@ const HEADING_SPEED := 1.143
 const VELOCITY_SECONDS := 0.25
 ## Grid cell for the lookup, metres (128 genre units).
 const CELL := 2.4384
+## The far lookup's grid: a cell this many CELLs wide, and the rings of cells it reads at most.
+const COARSE_CELLS := 4
+const COARSE_RINGS := 3
+## Further out than the rings reach, every this-many-th entry is looked at: such a state is
+## falling past the ramp, and its action is a guess whichever entry it comes from.
+const SPARSE_STRIDE := 32
 ## Floats per entry: x, y, z, vx, vy, vz, action.
 const STRIDE := 7
 
@@ -88,6 +94,12 @@ var entries: PackedFloat32Array = PackedFloat32Array()
 var _ride_end: PackedInt32Array = PackedInt32Array()
 ## Cell (Vector3i) -> PackedInt32Array of entry indices.
 var _grid: Dictionary = {}
+## The same for a state far from every ride: a coarser grid.
+var _coarse: Dictionary = {}
+## Cells with an entry within two cells of them: a state in any other is far from every ride, and
+## goes straight to the coarse grid instead of opening 124 empty cells to find that out.
+var _near: Dictionary = {}
+var _sparse: PackedInt32Array = PackedInt32Array()
 var reference_yaw: float = 0.0
 ## The simulator tracking and the veto run on. Without one the pilot only copies actions.
 var sim: Variant = null
@@ -167,6 +179,12 @@ func load_entries(rides: PackedFloat32Array, lengths: PackedInt32Array, yaw: flo
 	while _ride_end.size() < size():
 		_ride_end.append(size())
 	_grid = {}
+	_coarse = {}
+	for i in range(size()):
+		var ckey := _coarse_cell(Vector3(entries[i * STRIDE], entries[i * STRIDE + 1], entries[i * STRIDE + 2]))
+		if not _coarse.has(ckey):
+			_coarse[ckey] = PackedInt32Array()
+		_coarse[ckey].append(i)
 	for i in range(size()):
 		var key := _cell(Vector3(entries[i * STRIDE], entries[i * STRIDE + 1], entries[i * STRIDE + 2]))
 		# Through the dictionary, never `(_grid[key] as PackedInt32Array).append(i)`: the cast
@@ -175,6 +193,15 @@ func load_entries(rides: PackedFloat32Array, lengths: PackedInt32Array, yaw: flo
 		if not _grid.has(key):
 			_grid[key] = PackedInt32Array()
 		_grid[key].append(i)
+	_sparse = PackedInt32Array()
+	for i in range(0, size(), SPARSE_STRIDE):
+		_sparse.append(i)
+	_near = {}
+	for key: Vector3i in _grid:
+		for dx in range(-2, 3):
+			for dy in range(-2, 3):
+				for dz in range(-2, 3):
+					_near[key + Vector3i(dx, dy, dz)] = true
 
 
 ## Uses [param other]'s cache, without copying it: many bots riding one ramp share one lookup.
@@ -183,6 +210,9 @@ func share_cache(other: DotBotSurfPilot) -> DotBotSurfPilot:
 	entries = other.entries
 	_ride_end = other._ride_end
 	_grid = other._grid
+	_coarse = other._coarse
+	_near = other._near
+	_sparse = other._sparse
 	reference_yaw = other.reference_yaw
 	return self
 
@@ -271,18 +301,14 @@ func reset() -> void:
 func nearest(state: Variant) -> int:
 	var position: Vector3 = state.position
 	var velocity: Vector3 = state.velocity
-	var best := -1
-	var best_d := INF
+	_scan_best = -1
+	_scan_d = INF
 	var centre := _cell(position)
 	# The bot's own cell first, so the best so far is a near one before any neighbour is opened.
 	var own: Variant = _grid.get(centre)
 	if own != null:
-		for i: int in own:
-			var d := _distance(i, position, velocity)
-			if d < best_d:
-				best_d = d
-				best = i
-	for radius in [1, 2]:
+		_scan(own, position, velocity)
+	for radius in ([1, 2] if _near.has(centre) else []):
 		for dx in range(-radius, radius + 1):
 			for dy in range(-radius, radius + 1):
 				for dz in range(-radius, radius + 1):
@@ -300,21 +326,75 @@ func nearest(state: Variant) -> int:
 					# of the 26 neighbours hold hundreds of entries and are this far away. It was
 					# most of a forecast's cost (game-g2gfast: 390 us a simulated tick, 90 of it
 					# the motor).
-					if _box_distance_squared(key, position) >= best_d:
+					if _box_distance_squared(key, position) >= _scan_d:
 						continue
-					for i: int in bucket:
-						var d := _distance(i, position, velocity)
-						if d < best_d:
-							best_d = d
-							best = i
-		if best >= 0:
-			return best
-	for i in range(size()):
-		var d := _distance(i, position, velocity)
+					_scan(bucket, position, velocity)
+		if _scan_best >= 0:
+			return _scan_best
+	# Nothing within two cells: the state is off every ride (a veto's candidate gone wrong, a bot
+	# knocked away). A scan of every entry was a millisecond a call, and a veto asks for hundreds
+	# (game-arena, 2026-10-19: 4 to 12 ms a riding tick, nearly all of it this scan). A coarse grid,
+	# ring by ring outward, skipping a cell whose box is further than the best so far and stopping
+	# when the next ring cannot hold a nearer entry: the nearest entry. Past the last ring a sample.
+	var ccentre := _coarse_cell(position)
+	var width := CELL * COARSE_CELLS
+	for radius in range(0, COARSE_RINGS):
+		var reach := float(radius - 1) * width
+		if _scan_best >= 0 and radius >= 2 and reach * reach >= _scan_d:
+			break
+		for dx in range(-radius, radius + 1):
+			var edge_x := absi(dx) == radius
+			for dy in range(-radius, radius + 1):
+				var edge_xy := edge_x or absi(dy) == radius
+				# Inside the shell only the two faces in z are on it.
+				for dz in ([-radius, radius] if not edge_xy and radius > 0 else range(-radius, radius + 1)):
+					var key := ccentre + Vector3i(dx, dy, dz)
+					var bucket: Variant = _coarse.get(key)
+					if bucket == null:
+						continue
+					if _scan_best >= 0 and _coarse_box_distance_squared(key, position) >= _scan_d:
+						continue
+					_scan(bucket, position, velocity)
+	if _scan_best >= 0:
+		return _scan_best
+	_scan(_sparse, position, velocity)
+	return _scan_best
+
+
+var _scan_best: int = -1
+var _scan_d: float = INF
+
+
+## Folds the entries of [param bucket] into [member _scan_best]. One call a cell, with the
+## distance written out: a call and two Vector3s an entry was most of a lookup's cost.
+func _scan(bucket: PackedInt32Array, position: Vector3, velocity: Vector3) -> void:
+	var e := entries
+	var px := position.x
+	var py := position.y
+	var pz := position.z
+	var vx := velocity.x
+	var vy := velocity.y
+	var vz := velocity.z
+	var w := VELOCITY_SECONDS * VELOCITY_SECONDS
+	var best := _scan_best
+	var best_d := _scan_d
+	for i: int in bucket:
+		var o := i * STRIDE
+		var dx := e[o] - px
+		var dy := e[o + 1] - py
+		var dz := e[o + 2] - pz
+		var d := dx * dx + dy * dy + dz * dz
+		if d >= best_d:
+			continue
+		dx = e[o + 3] - vx
+		dy = e[o + 4] - vy
+		dz = e[o + 5] - vz
+		d += (dx * dx + dy * dy + dz * dz) * w
 		if d < best_d:
 			best_d = d
 			best = i
-	return best
+	_scan_best = best
+	_scan_d = best_d
 
 
 ## The action the nearest remembered state took, or 0 (coast) with no entries.
@@ -593,6 +673,17 @@ func _box_distance_squared(key: Vector3i, p: Vector3) -> float:
 	var hi := lo + Vector3(CELL, CELL, CELL)
 	var q := p.clamp(lo, hi)
 	return q.distance_squared_to(p)
+
+
+func _coarse_box_distance_squared(key: Vector3i, p: Vector3) -> float:
+	var w := CELL * COARSE_CELLS
+	var lo := Vector3(key) * w
+	return p.clamp(lo, lo + Vector3(w, w, w)).distance_squared_to(p)
+
+
+func _coarse_cell(p: Vector3) -> Vector3i:
+	var w := CELL * COARSE_CELLS
+	return Vector3i(int(floor(p.x / w)), int(floor(p.y / w)), int(floor(p.z / w)))
 
 
 func _cell(p: Vector3) -> Vector3i:

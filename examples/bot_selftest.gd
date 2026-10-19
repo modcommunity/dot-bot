@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 153
+const CHECKS := 155
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
@@ -1085,6 +1085,28 @@ func _test_surf() -> void:
 			if got == best or is_equal_approx(pilot._distance(got, probe.position, probe.velocity), best_d):
 				agree += 1
 	_check(agree == asked, "the cache's lookup finds the entry a scan of every entry finds", "%d of %d" % [agree, asked])
+
+	# A state off every ride (a veto's candidate gone wrong) reads the coarse grid: the nearest
+	# entry too, ring by ring. Much further out it reads a sparse sample: an entry near the
+	# nearest (within 20 m, here), which is all a falling state's action needs.
+	var far_ok := 0
+	var far_asked := 0
+	for offset: Vector3 in [Vector3(14.0, 9.0, -11.0), Vector3(40.0, 25.0, -30.0)]:
+		for s: ToyState in _toy_starts(10, 6):
+			var probe := s.duplicate_state()
+			probe.position += offset
+			if pilot._near.has(pilot._cell(probe.position)):
+				continue
+			far_asked += 1
+			var best_d := INF
+			for i in range(pilot.size()):
+				best_d = minf(best_d, pilot._distance(i, probe.position, probe.velocity))
+			var got := pilot.nearest(probe)
+			var slack := 0.0 if offset.length() < 20.0 else 20.0
+			if got >= 0 and sqrt(pilot._distance(got, probe.position, probe.velocity)) <= sqrt(best_d) + slack + 0.001:
+				far_ok += 1
+	_check(far_ok == far_asked, "a state off every ride finds the nearest entry from the coarse grid, a near one from the sparse sample", "%d of %d" % [far_ok, far_asked])
+	_check(far_asked >= 5, "and enough of the probes were far", "%d" % far_asked)
 
 	var tries := _toy_starts(20, 4)
 	var arrived := [0, 0]
