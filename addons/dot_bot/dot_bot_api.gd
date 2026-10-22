@@ -19,7 +19,7 @@ extends RefCounted
 # 5: the demonstration recorder. DotBotDemoSchema, DotBotDemoEpisode, DotBotDemoRecorder,
 #    DotBotDemoConfig (bind_cvars), DotBotDemoStore, DotBotDemoStoreMemory.
 # 6: the recorder (the level-5 DotBotDemo* classes) moved to the addon dot-bot-record with the same
-#    names. The ride harvest and book take a store, schema and episode untyped, so dot-bot compiles
-#    without it; a game that records links dot-bot-record. OLDEST rises to 6 for that reason.
+#    names. Level 5 was never delivered to a game, so OLDEST stays 1: nothing built at 1 to 4 names
+#    a recorder class. A game that records links dot-bot-record (its own requires entry).
 const LEVEL := 6
-const OLDEST := 6
+const OLDEST := 1
