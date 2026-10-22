@@ -32,6 +32,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_nav.gd`, `dot_bot_hiding.gd`, `dot_bot_search.gd` | for hiding games: a navigation mesh baked from a map's colliders; places scored by sight lines and picked apart; a seeker's memory of the places |
 | `addons/dot_bot/runtime/surf/` | surf bots: `DotBotSurfCourse` (one ride), `DotBotSurfPlanner` (the search on the motor, the cache's repair rounds), `DotBotSurfPilot` (the run-time policy and veto), `DotBotSurfRide` (one bot riding one edge while it aims) |
 | `addons/dot_bot/demo/` | the demonstration recorder: `DotBotDemoSchema` (host-declared fields), `DotBotDemoRecorder` (begin/sample/end/cancel, adaptive rate, queue, budgeted writes via `process`), `DotBotDemoConfig` (`bot_record*`, ON by default), `DotBotDemoStore` and `DotBotDemoStoreMemory` |
+| `addons/dot_bot/soak/` | `DotBotSoak` (headless soak runner, JSON report, pass/fail reasons) and `DotBotSoakConfig` (thresholds); [docs/soak.md](docs/soak.md); suite `examples/soak_selftest.tscn` |
 | `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels, hiding, searching, a baked path, a surf ride on a toy simulator, a ride edge, the demonstration recorder |
 
 ## Running and testing
