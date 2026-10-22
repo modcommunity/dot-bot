@@ -36,6 +36,10 @@ const TIMED_OUT := 3
 ## A position this far from the last tick's, metres, was put there (a teleport), not ridden.
 const JUMPED := 6.0
 
+## A ride that stays within this radius, metres, off the ground for [member stall_ticks] (STALL_SECONDS) is wedged in geometry, and ends as [constant TIMED_OUT]. On the ground it may be waiting.
+const STALL_RADIUS := 0.5
+const STALL_SECONDS := 8.0
+
 var pilot: DotBotSurfPilot = null
 var course: DotBotSurfCourse = null
 ## The game's tick when the ride began, and how long it may run.
@@ -51,7 +55,11 @@ var decode: Callable = Callable()
 ## The book entry this ride was picked from.
 var picked: Dictionary = {}
 
+var stall_ticks: int = 64 * 8
+
 var _last: Vector3 = Vector3.INF
+var _anchor: Vector3 = Vector3.INF
+var _anchor_tick: int = 0
 
 
 ## Starts a ride on [param p_course] with a pilot sharing [param cache]'s rides, vetoing on
@@ -71,6 +79,8 @@ func begin(cache: DotBotSurfPilot, p_course: DotBotSurfCourse, sim: Variant, now
 	course = p_course
 	began = now_tick
 	max_ticks = int(seconds * tick_rate)
+	stall_ticks = int(STALL_SECONDS * tick_rate)
+	_anchor = Vector3.INF
 	status = RIDING
 	ticks = 0
 	return self
@@ -112,6 +122,11 @@ func steer(state: Variant, intent: DotBotIntent, now_tick: int) -> int:
 		DotBotSurfCourse.EVENT_PIT, DotBotSurfCourse.EVENT_BELOW:
 			return _end(FELL)
 	if now_tick - began > max_ticks:
+		return _end(TIMED_OUT)
+	if _anchor == Vector3.INF or p.distance_to(_anchor) > STALL_RADIUS or (state.has_method(&"is_grounded") and state.is_grounded()):
+		_anchor = p
+		_anchor_tick = now_tick
+	elif now_tick - _anchor_tick > stall_ticks:
 		return _end(TIMED_OUT)
 	if not recorded.is_empty() and (recorded["actions"] as PackedFloat32Array).size() >= int(recorded["action_size"]):
 		var size: int = recorded["action_size"]

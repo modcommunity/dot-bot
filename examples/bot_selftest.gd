@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 190
+const CHECKS := 191
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
@@ -1239,6 +1239,16 @@ func _test_ride_edges() -> void:
 		tick += 1
 	_check(status == DotBotSurfRide.LANDED and view_kept, "a ride steers to the far floor while looking the other way",
 		"status %d after %d ticks at %s" % [status, tick, str(s.position)])
+	var stalled := DotBotSurfRide.new().begin(cache, course, null, 0)
+	var pinned := ToyState.new()
+	pinned.position = Vector3(4.0, 0.0, 0.0)
+	var pin_status := DotBotSurfRide.RIDING
+	var pin_tick := 0
+	while pin_status == DotBotSurfRide.RIDING and pin_tick < 64 * 10:
+		pin_status = stalled.steer(pinned, DotBotIntent.new(), pin_tick)
+		pin_tick += 1
+	_check(pin_status == DotBotSurfRide.TIMED_OUT and pin_tick < 64 * 12, "a ride that goes nowhere for 8 s ends instead of running its 30",
+		"status %d after %d ticks" % [pin_status, pin_tick])
 	brain.ride_ended(true)
 	me.position = s.position
 	var after := brain.think(me, world, t)
