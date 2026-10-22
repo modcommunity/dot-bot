@@ -114,8 +114,8 @@ var tracking: bool = false
 var check_every: int = 24
 var horizon: int = 192
 var rolling: bool = true
-## Most simulator steps one tick spends on a fresh forecast (0 = all of it in one tick). The
-## rest resumes on the next ticks and the veto is judged once it completes.
+## Most simulator steps one tick spends on a fresh forecast or a veto (0 = all of it in one tick).
+## The rest resumes on the next ticks and the veto is judged once the forecast completes.
 var forecast_budget: int = 24
 
 ## Statistics: futures run afresh, vetoes taken, how many of those found no way out, and how
@@ -150,6 +150,17 @@ var _hopeless_streak: int = 0
 var _forecast_tick: int = -1000
 var _fc_left: int = 0
 var _fc_pending: bool = false
+# A veto in progress: the state it started from, the action being tried, that action's future so
+# far and the best found.
+var _vt_pending: bool = false
+var _vt_state: Variant = null
+var _vt_a: int = 0
+var _vt_s: Variant = null
+var _vt_t: int = 0
+var _vt_best: int = -1
+var _vt_best_score: float = -INF
+var _vt_longest: int = -1
+var _vt_longest_t: float = -1.0
 
 
 # --- The cache -------------------------------------------------------------------
@@ -299,6 +310,8 @@ func reset() -> void:
 	_cooldown = 0
 	_hopeless_streak = 0
 	_forecast_tick = -1000
+	_vt_pending = false
+	_vt_state = null
 	_drop_forecast()
 
 
@@ -410,7 +423,11 @@ func policy(state: Variant) -> int:
 
 ## This tick's action for a player in [param state]. Call once a tick, in order.
 func action(state: Variant) -> int:
-	if sim != null and horizon > 0 and not tracking:
+	if _vt_pending:
+		_veto_run()
+		if not _vt_pending and rolling:
+			_forecast(state, _override, _override_left)
+	elif sim != null and horizon > 0 and not tracking:
 		if rolling:
 			_keep_forecast(state)
 		elif _override_left <= 0 and _tick % check_every == 0:
@@ -487,25 +504,65 @@ func _check(state: Variant) -> void:
 
 func _veto(state: Variant) -> void:
 	vetoes += 1
-	var best := -1
-	var best_score := -INF
-	var longest := -1
-	var longest_t := -1.0
-	for a in range(ACTIONS.size()):
-		var f := future(state, a, horizon)
-		if bool(f[0]):
-			if float(f[1]) > best_score:
-				best_score = float(f[1])
-				best = a
-		elif float(f[1]) > longest_t:
-			longest_t = float(f[1])
-			longest = a
+	_vt_pending = true
+	_vt_state = state.duplicate_state()
+	_vt_a = 0
+	_vt_s = null
+	_vt_best = -1
+	_vt_best_score = -INF
+	_vt_longest = -1
+	_vt_longest_t = -1.0
+	_veto_run()
+
+
+## A veto, then the forecast again from its action; with the veto unfinished the forecast waits for it.
+func _veto_then_forecast(state: Variant) -> void:
+	_veto(state)
+	if not _vt_pending:
+		_forecast(state, _override, _override_left)
+
+
+## Runs up to [member forecast_budget] steps of the pending veto: every action's future in turn.
+func _veto_run() -> void:
+	var n := forecast_budget if forecast_budget > 0 else 1 << 30
+	while _vt_a < ACTIONS.size() and n > 0:
+		if _vt_s == null:
+			_vt_s = _vt_state.duplicate_state()
+			_vt_t = 0
+		var a := _vt_a if _vt_t < check_every else policy(_vt_s)
+		var event: int = sim.step(_vt_s, command_for(sim, a, _vt_s, reference_yaw))
+		veto_ticks += 1
+		n -= 1
+		_vt_t += 1
+		var ended := true
+		if event == DotBotSurfCourse.EVENT_GOAL or (event == DotBotSurfCourse.EVENT_NONE and _vt_t >= horizon):
+			var sc: float = INF if event == DotBotSurfCourse.EVENT_GOAL else (float(score.call(_vt_s)) if score.is_valid() else 0.0)
+			if sc > _vt_best_score:
+				_vt_best_score = sc
+				_vt_best = _vt_a
+		elif event != DotBotSurfCourse.EVENT_NONE:
+			if float(_vt_t - 1) > _vt_longest_t:
+				_vt_longest_t = float(_vt_t - 1)
+				_vt_longest = _vt_a
+		else:
+			ended = false
+		if ended:
+			_vt_a += 1
+			_vt_s = null
+	if _vt_a >= ACTIONS.size():
+		_vt_pending = false
+		_vt_state = null
+		_veto_apply()
+
+
+func _veto_apply() -> void:
+	var best := _vt_best
 	if best < 0:
 		# No way out in sight: put the fall off as long as possible, which is the most time for
 		# the next check to find one.
 		hopeless += 1
 		_hopeless_streak += 1
-		best = longest
+		best = _vt_longest
 	else:
 		_hopeless_streak = 0
 	if best >= 0:
@@ -550,8 +607,7 @@ func _keep_forecast(state: Variant) -> void:
 	# On the forecast: one more tick at the far end, unless it already ended.
 	if _end_event != DotBotSurfCourse.EVENT_NONE:
 		if _end_event != DotBotSurfCourse.EVENT_GOAL and _cooldown <= 0:
-			_veto(state)
-			_forecast(state, _override, _override_left)
+			_veto_then_forecast(state)
 		return
 	var a: int
 	if _end_override_left > 0:
@@ -567,8 +623,7 @@ func _keep_forecast(state: Variant) -> void:
 		_pred_v = _pred_v.slice(_pred_head)
 		_pred_head = 0
 	if _end_event != DotBotSurfCourse.EVENT_NONE and _end_event != DotBotSurfCourse.EVENT_GOAL and _cooldown <= 0:
-		_veto(state)
-		_forecast(state, _override, _override_left)
+		_veto_then_forecast(state)
 
 
 ## A fresh forecast from [param state]: [param first] held for [param first_left] ticks, then the
@@ -588,8 +643,7 @@ func _forecast(state: Variant, first: int, first_left: int) -> void:
 ## Vetoes when a completed forecast ends in a fall, then forecasts again from the veto's action.
 func _judge(state: Variant) -> void:
 	if _end_event != DotBotSurfCourse.EVENT_NONE and _end_event != DotBotSurfCourse.EVENT_GOAL and _cooldown <= 0:
-		_veto(state)
-		_forecast(state, _override, _override_left)
+		_veto_then_forecast(state)
 
 
 ## Runs up to [member forecast_budget] steps of the pending forecast.

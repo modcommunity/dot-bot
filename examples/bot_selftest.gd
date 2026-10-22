@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 195
+const CHECKS := 196
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
@@ -1157,10 +1157,27 @@ func _test_surf() -> void:
 			calls += 1
 		same += 1 if pilot._end_event == whole_event and pilot._pred_p.size() == whole_n and pilot._end.position.is_equal_approx(whole_end) else 0
 		steps_ok = steps_ok and calls == ceili(float(whole_n) / 7.0)
+	var veto_same := 0
+	for s: ToyState in tries:
+		pilot.forecast_budget = 0
+		pilot._hopeless_streak = 0
+		pilot._veto(s)
+		var whole_action: int = pilot._override
+		var whole_wait: int = pilot._cooldown
+		pilot.forecast_budget = 5
+		pilot._hopeless_streak = 0
+		pilot._override = -2
+		pilot._veto(s)
+		var veto_calls := 1
+		while pilot._vt_pending:
+			pilot._veto_run()
+			veto_calls += 1
+		veto_same += 1 if pilot._override == whole_action and pilot._cooldown == whole_wait and veto_calls > 1 else 0
 	pilot.forecast_budget = 24
 	pilot._drop_forecast()
 	_check(same == tries.size(), "a forecast spread over ticks ends where an all-at-once one does, with the same event", "%d of %d" % [same, tries.size()])
 	_check(steps_ok, "and takes no more steps a tick than its budget")
+	_check(veto_same == tries.size(), "and a veto spread over ticks picks the action and the wait an all-at-once one does", "%d of %d" % [veto_same, tries.size()])
 
 	# Riding while aiming elsewhere: the keys are turned for the view, and the wish is the same.
 	var heading_view := DotBotSurfPilot.move_toward(30.0, 30.0)
