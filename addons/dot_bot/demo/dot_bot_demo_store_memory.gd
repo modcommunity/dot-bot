@@ -49,6 +49,16 @@ func mark(ids: Array, verified: bool, score: float) -> DotResult:
 	return DotResult.success(changed)
 
 
+func remove(ids: Array) -> DotResult:
+	var kept: Array = []
+	for e: DotBotDemoEpisode in episodes:
+		if not ids.has(e.id):
+			kept.append(e)
+	var gone := episodes.size() - kept.size()
+	episodes = kept
+	return DotResult.success(gone)
+
+
 func prune(map_id: String, keep_version: String) -> DotResult:
 	var kept: Array = []
 	for e: DotBotDemoEpisode in episodes:

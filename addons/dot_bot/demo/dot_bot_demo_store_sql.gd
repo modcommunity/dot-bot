@@ -129,6 +129,18 @@ func mark(ids: Array, verified: bool, score: float) -> DotResult:
 	return DotResult.success(changed)
 
 
+func remove(ids: Array) -> DotResult:
+	var gone := 0
+	for i in range(0, ids.size(), 50):
+		var part: Array = ids.slice(i, i + 50)
+		var res: DotResult = await driver.execute(
+			"DELETE FROM %s WHERE id IN (%s)" % [TABLE, ", ".join(_marks(part.size()))], part)
+		if not res.ok:
+			return res
+		gone += part.size()
+	return DotResult.success(gone)
+
+
 func prune(map_id: String, keep_version: String) -> DotResult:
 	var seen: DotResult = await driver.query_value(
 		"SELECT COUNT(*) FROM %s WHERE map_id = ? AND map_version <> ?" % TABLE, [map_id, keep_version], 0)

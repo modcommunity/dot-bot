@@ -45,6 +45,12 @@ var max_ticks: int = 64 * 20
 var status: int = RIDING
 var ticks: int = 0
 
+## The recorded ride being played back, and the host's [code]func(action: PackedFloat32Array, state, intent)[/code] that applies a row.
+var recorded: Dictionary = {}
+var decode: Callable = Callable()
+## The book entry this ride was picked from.
+var picked: Dictionary = {}
+
 var _last: Vector3 = Vector3.INF
 
 
@@ -70,6 +76,25 @@ func begin(cache: DotBotSurfPilot, p_course: DotBotSurfCourse, sim: Variant, now
 	return self
 
 
+## One of [param key]'s saved rides from [param book], weighted by success from the bot's [param rng]; empty with none.
+static func pick(book: DotBotRideBook, key: String, rng: DotRandomStream) -> Dictionary:
+	return book.choose(key, rng)
+
+
+## Starts the ride [param entry] (from [method pick]). A recording is played back through [param p_decode]; a seed rides as [method begin] does, on its own pilot (entry data) or [param cache].
+func begin_picked(entry: Dictionary, cache: DotBotSurfPilot, p_course: DotBotSurfCourse, sim: Variant, now_tick: int,
+		p_decode: Callable = Callable(), tick_rate: float = 64.0, seconds: float = 20.0) -> DotBotSurfRide:
+	picked = entry
+	var data: Variant = entry.get("data")
+	if entry.get("source", "") == DotBotRideBook.RECORDED and data is Dictionary and p_decode.is_valid():
+		begin(cache, p_course, sim, now_tick, tick_rate, seconds)
+		recorded = data
+		decode = p_decode
+		return self
+	recorded = {}
+	return begin(data if data is DotBotSurfPilot else cache, p_course, sim, now_tick, tick_rate, seconds)
+
+
 ## This tick's legs for a bot in [param state] (its real one, after the last tick), written into
 ## [param intent] in place: the move for the intent's own view, jump as the action says, never
 ## crouch or walk (either changes the hull or the speed the rides were planned with). Returns
@@ -88,6 +113,13 @@ func steer(state: Variant, intent: DotBotIntent, now_tick: int) -> int:
 			return _end(FELL)
 	if now_tick - began > max_ticks:
 		return _end(TIMED_OUT)
+	if not recorded.is_empty() and (recorded["actions"] as PackedFloat32Array).size() >= int(recorded["action_size"]):
+		var size: int = recorded["action_size"]
+		var actions: PackedFloat32Array = recorded["actions"]
+		var row := mini(ticks / int(recorded["hold"]), actions.size() / size - 1)
+		decode.call(actions.slice(row * size, (row + 1) * size), state, intent)
+		ticks += 1
+		return RIDING
 	var action := pilot.action(state)
 	if DotBotSurfPilot.jumps(action) or (state.has_method(&"is_grounded") and state.is_grounded()):
 		# Running to the ramp, and jumping, the view goes where the legs go: on the ground a key
@@ -110,4 +142,5 @@ func _end(how: int) -> int:
 
 func describe() -> Dictionary:
 	return {"status": ["riding", "landed", "fell", "timed out"][status], "ticks": ticks,
+		"source": picked.get("source", "") if not picked.is_empty() else "",
 		"pilot": pilot.describe() if pilot != null else {}}

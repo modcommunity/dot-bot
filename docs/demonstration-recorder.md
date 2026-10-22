@@ -1,6 +1,6 @@
 # Demonstration recorder
 
-Stage 1's core is built (`addons/dot_bot/demo/`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores are built (`dot_bot_demo_store_json.gd`, `dot_bot_demo_store_sql.gd`, `DotBotDemoStore.from_config`); harvest and statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
+Stage 1's core is built (`addons/dot_bot/demo/`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores are built (`dot_bot_demo_store_json.gd`, `dot_bot_demo_store_sql.gd`, `DotBotDemoStore.from_config`); the ride harvest (`DotBotRideHarvest`, `DotBotRideBook`, `DotBotRideConfig` in `runtime/surf/`) is built as the replay of the recorded commands described below; pilot quantisation and statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
 
 ## Why
 
@@ -97,6 +97,10 @@ The game (game-arena's `arena_surf.gd`) declares the `ride` schema: observation 
 3. **Keep or reject.** Kept when the course (`DotBotSurfCourse` for that landing) says it landed on the recorded island; the episode is marked `verified` and its `score` is its landing rate from six perturbed starts (the planner's own perturbation). Otherwise marked unverified and never loaded again.
 
 Verification costs a ride's length in simulated ticks a start, so it never runs on the tick: on a server it is a `DotJob` on dot-core's `DotScheduler` (threads where `has_threads()`, a frame budget otherwise, capped at 2 ms a frame), and the offline tool runs it in bulk.
+
+### As built
+
+`DotBotRideHarvest` replays the recorded commands themselves (open loop, each held for the gap the rate left) on the host's simulator through three host methods (`replay_start`, `replay_command`, `landing`, optional `perturb`), as a `DotBotRideHarvestJob` inside `budget_msec` a step. Quantising to pilot actions with tracking and veto is not built. A full edge past `cap` replaces its worst-scored ride with a better newcomer through `DotBotDemoStore.remove`. `DotBotRideBook` keeps verified recordings and searched seeds per edge for one map id and version (a new version empties it), and `DotBotSurfRide.pick` and `begin_picked` choose and play one. All numbers are `DotBotRideConfig`.
 
 ### Ranking and choosing
 

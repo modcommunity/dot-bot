@@ -96,6 +96,25 @@ func mark(ids: Array, verified: bool, score: float) -> DotResult:
 	return DotResult.success(changed)
 
 
+func remove(ids: Array) -> DotResult:
+	var gone := 0
+	for file_path in _all_paths():
+		var loaded := _file(file_path)
+		if not loaded.ok:
+			continue
+		var list: Array = loaded.value
+		var before := list.size()
+		for i in range(list.size() - 1, -1, -1):
+			if ids.has((list[i] as DotBotDemoEpisode).id):
+				list.remove_at(i)
+		if list.size() != before:
+			gone += before - list.size()
+			var saved := _save(file_path)
+			if not saved.ok:
+				return saved
+	return DotResult.success(gone)
+
+
 func prune(map_id: String, keep_version: String) -> DotResult:
 	var keep := _dir_for(map_id, keep_version)
 	var prefix := DotPaths.slugify(map_id) + "@"

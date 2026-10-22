@@ -33,6 +33,11 @@ func mark(_ids: Array, _verified: bool, _score: float) -> DotResult:
 	return _unsupported("mark")
 
 
+## Deletes the episodes with these ids; the value is how many were there.
+func remove(_ids: Array) -> DotResult:
+	return _unsupported("remove")
+
+
 ## Drops the episodes of every other version of [param map_id]; the value is how many.
 func prune(_map_id: String, _keep_version: String) -> DotResult:
 	return _unsupported("prune")
