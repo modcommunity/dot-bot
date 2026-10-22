@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 193
+const CHECKS := 195
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
@@ -1137,6 +1137,30 @@ func _test_surf() -> void:
 	_check(pilot.resyncs == 0, "on an exact simulator a kept forecast never stops matching", "%d resyncs" % pilot.resyncs)
 	_check(rolling_cost < plain_cost * 0.5, "and keeping the forecast costs under half the lookahead of running it afresh",
 		"%.2f against %.2f simulated ticks a ridden tick; %s" % [rolling_cost, plain_cost, str(pilot.describe())])
+
+	# A forecast spread over ticks ends where, and with the verdict, an all-at-once one does.
+	var same := 0
+	var steps_ok := true
+	pilot.sim = sim
+	pilot.rolling = true
+	for s: ToyState in tries:
+		pilot.forecast_budget = 0
+		pilot._forecast(s, -1, 0)
+		var whole_event: int = pilot._end_event
+		var whole_n: int = pilot._pred_p.size()
+		var whole_end: Vector3 = pilot._end.position
+		pilot.forecast_budget = 7
+		pilot._forecast(s, -1, 0)
+		var calls := 1
+		while pilot._fc_pending:
+			pilot._run_forecast()
+			calls += 1
+		same += 1 if pilot._end_event == whole_event and pilot._pred_p.size() == whole_n and pilot._end.position.is_equal_approx(whole_end) else 0
+		steps_ok = steps_ok and calls == ceili(float(whole_n) / 7.0)
+	pilot.forecast_budget = 24
+	pilot._drop_forecast()
+	_check(same == tries.size(), "a forecast spread over ticks ends where an all-at-once one does, with the same event", "%d of %d" % [same, tries.size()])
+	_check(steps_ok, "and takes no more steps a tick than its budget")
 
 	# Riding while aiming elsewhere: the keys are turned for the view, and the wish is the same.
 	var heading_view := DotBotSurfPilot.move_toward(30.0, 30.0)

@@ -114,6 +114,9 @@ var tracking: bool = false
 var check_every: int = 24
 var horizon: int = 192
 var rolling: bool = true
+## Most simulator steps one tick spends on a fresh forecast (0 = all of it in one tick). The
+## rest resumes on the next ticks and the veto is judged once it completes.
+var forecast_budget: int = 24
 
 ## Statistics: futures run afresh, vetoes taken, how many of those found no way out, and how
 ## often a kept forecast stopped matching.
@@ -145,6 +148,8 @@ var _end_event: int = 0
 var _cooldown: int = 0
 var _hopeless_streak: int = 0
 var _forecast_tick: int = -1000
+var _fc_left: int = 0
+var _fc_pending: bool = false
 
 
 # --- The cache -------------------------------------------------------------------
@@ -515,6 +520,13 @@ func _veto(state: Variant) -> void:
 ## The rolling veto: keeps the forecast while the real state is on it, extends it by a tick at
 ## the far end, and vetoes when the far end falls. See the class notes.
 func _keep_forecast(state: Variant) -> void:
+	if _fc_pending:
+		# The real state moves on while the forecast catches up; the head follows it.
+		_pred_head += 1
+		_run_forecast()
+		if not _fc_pending:
+			_judge(state)
+		return
 	var on_it := false
 	if _end != null and _pred_head < _pred_p.size():
 		var p: Vector3 = state.position
@@ -532,9 +544,8 @@ func _keep_forecast(state: Variant) -> void:
 			_drop_forecast()
 			return
 		_forecast(state, _override if _override_left > 0 else -1, _override_left)
-		if _end_event != DotBotSurfCourse.EVENT_NONE and _end_event != DotBotSurfCourse.EVENT_GOAL and _cooldown <= 0:
-			_veto(state)
-			_forecast(state, _override, _override_left)
+		if not _fc_pending:
+			_judge(state)
 		return
 	# On the forecast: one more tick at the far end, unless it already ended.
 	if _end_event != DotBotSurfCourse.EVENT_NONE:
@@ -569,7 +580,24 @@ func _forecast(state: Variant, first: int, first_left: int) -> void:
 	_end = state.duplicate_state()
 	_end_override = first
 	_end_override_left = first_left if first >= 0 else 0
-	for _t in range(horizon):
+	_fc_left = horizon
+	_fc_pending = true
+	_run_forecast()
+
+
+## Vetoes when a completed forecast ends in a fall, then forecasts again from the veto's action.
+func _judge(state: Variant) -> void:
+	if _end_event != DotBotSurfCourse.EVENT_NONE and _end_event != DotBotSurfCourse.EVENT_GOAL and _cooldown <= 0:
+		_veto(state)
+		_forecast(state, _override, _override_left)
+
+
+## Runs up to [member forecast_budget] steps of the pending forecast.
+func _run_forecast() -> void:
+	var n := forecast_budget if forecast_budget > 0 else _fc_left
+	while _fc_left > 0 and n > 0:
+		n -= 1
+		_fc_left -= 1
 		var a: int
 		if _end_override_left > 0:
 			a = _end_override
@@ -580,7 +608,8 @@ func _forecast(state: Variant, first: int, first_left: int) -> void:
 		lookahead_ticks += 1
 		_push(_end)
 		if _end_event != DotBotSurfCourse.EVENT_NONE:
-			break
+			_fc_left = 0
+	_fc_pending = _fc_left > 0
 
 
 func _push(s: Variant) -> void:
@@ -595,6 +624,8 @@ func _drop_forecast() -> void:
 	_end = null
 	_end_event = DotBotSurfCourse.EVENT_NONE
 	_end_override_left = 0
+	_fc_left = 0
+	_fc_pending = false
 
 
 # --- Tracking ------------------------------------------------------------------------
