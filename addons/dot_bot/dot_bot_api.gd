@@ -16,5 +16,7 @@ extends RefCounted
 #    DotBotNav.add_ride, rides, clear_rides, route (points and rides), islands, island_at,
 #    polygon_at, on_island; DotBotWorld.route_detail_fn and route_detail; DotBotIntent.ride;
 #    DotBotBrain.ride_ended; DotBotSurfCourse.unsupported_fn, toward_goal; DotBotSurfPlanner.trace.
-const LEVEL := 4
+# 5: the demonstration recorder. DotBotDemoSchema, DotBotDemoEpisode, DotBotDemoRecorder,
+#    DotBotDemoConfig (bind_cvars), DotBotDemoStore, DotBotDemoStoreMemory.
+const LEVEL := 5
 const OLDEST := 1

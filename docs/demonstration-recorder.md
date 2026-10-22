@@ -1,6 +1,6 @@
 # Demonstration recorder
 
-Design, not yet built. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
+Stage 1's core is built (`addons/dot_bot/demo/`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores, harvest and statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
 
 ## Why
 
