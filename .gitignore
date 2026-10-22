@@ -20,3 +20,5 @@ Thumbs.db
 
 # Editors
 .vscode/
+# Optional, for the ride harvest suite (dot-bot-record, the recorder and its stores).
+/addons/dot_bot_record

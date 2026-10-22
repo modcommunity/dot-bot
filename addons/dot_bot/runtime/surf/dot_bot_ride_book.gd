@@ -42,17 +42,17 @@ func add_seeded(key: String, score: float, data: Variant = null, id: int = 0) ->
 
 
 ## Replaces an edge's recordings with the verified ones in [param store]; the value is how many.
-func load_edge(store: DotBotDemoStore, kind: String, key: String, schema: DotBotDemoSchema, tick_rate: float) -> DotResult:
+func load_edge(store: Variant, kind: String, key: String, schema: Variant, tick_rate: float) -> DotResult:
 	var loaded: DotResult = await store.load(map_id, map_version, kind, key, config.cap)
 	if not loaded.ok:
 		return loaded
 	var kept: Array = (_edges.get(key, []) as Array).filter(func(r: Dictionary) -> bool: return r["source"] != RECORDED)
 	_edges[key] = kept
 	var n := 0
-	for ep: DotBotDemoEpisode in loaded.value:
+	for ep in loaded.value:
 		if not ep.verified or ep.map_id != map_id or ep.map_version != map_version:
 			continue
-		var obs := schema.observation_size()
+		var obs: int = schema.observation_size()
 		var actions := PackedFloat32Array()
 		for i in ep.sample_count():
 			actions.append_array(ep.ticks.slice(i * ep.frame_size + obs, (i + 1) * ep.frame_size))

@@ -22,7 +22,7 @@ const FAILED := -1
 const REJECTED_SCORE := -1.0
 
 var config: DotBotRideConfig
-var schema: DotBotDemoSchema
+var schema: Variant
 var sim: Variant = null
 var host: Variant = null
 
@@ -33,7 +33,7 @@ var turned_away: int = 0
 var replays: int = 0
 
 
-func _init(p_config: DotBotRideConfig, p_schema: DotBotDemoSchema, p_sim: Variant, p_host: Variant) -> void:
+func _init(p_config: DotBotRideConfig, p_schema: Variant, p_sim: Variant, p_host: Variant) -> void:
 	config = p_config
 	schema = p_schema
 	sim = p_sim
@@ -51,14 +51,14 @@ func ready() -> DotResult:
 
 
 ## One replay of [param ep] from [param state]: [constant LANDED], [constant FAILED] or [constant GOING] if it ran out of ticks.
-func replay(ep: DotBotDemoEpisode, state: Variant) -> int:
+func replay(ep: Variant, state: Variant) -> int:
 	replays += 1
-	var fs := ep.frame_size
-	var obs := schema.observation_size()
+	var fs: int = ep.frame_size
+	var obs: int = schema.observation_size()
 	var delta: float = float(sim.get("delta")) if sim.get("delta") != null else 0.0
 	var hold := 1 if delta <= 0.0 or ep.rate <= 0.0 else maxi(1, roundi(1.0 / (delta * ep.rate)))
 	var action := PackedFloat32Array()
-	var count := ep.sample_count()
+	var count: int = ep.sample_count()
 	for i in count + ceili(float(config.settle_ticks) / hold):
 		if i < count:
 			action = ep.ticks.slice(i * fs + obs, (i + 1) * fs)
@@ -86,11 +86,11 @@ func verify(episodes: Array) -> Array:
 
 ## Episodes of an edge nobody has replayed yet.
 static func unchecked(episodes: Array) -> Array:
-	return episodes.filter(func(e: DotBotDemoEpisode) -> bool: return not e.verified and e.score == 0.0)
+	return episodes.filter(func(e: Variant) -> bool: return not e.verified and e.score == 0.0)
 
 
 ## Replays an edge's unchecked episodes in [param store] and stores the verdicts; the value is the edge's verified count.
-func harvest(store: DotBotDemoStore, map_id: String, map_version: String, kind: String, key: String) -> DotResult:
+func harvest(store: Variant, map_id: String, map_version: String, kind: String, key: String) -> DotResult:
 	var loaded: DotResult = await store.load(map_id, map_version, kind, key, 0)
 	if not loaded.ok:
 		return loaded
@@ -99,11 +99,11 @@ func harvest(store: DotBotDemoStore, map_id: String, map_version: String, kind: 
 
 
 ## Writes [param verdicts] to [param store] against the edge's [param existing] episodes, replacing the worst-scored verified ride past the cap.
-func commit(store: DotBotDemoStore, existing: Array, verdicts: Array) -> DotResult:
-	var kept: Array = existing.filter(func(e: DotBotDemoEpisode) -> bool: return e.verified)
+func commit(store: Variant, existing: Array, verdicts: Array) -> DotResult:
+	var kept: Array = existing.filter(func(e: Variant) -> bool: return e.verified)
 	var drop: Array = []
 	for v: Dictionary in verdicts:
-		var ep: DotBotDemoEpisode = v["episode"]
+		var ep: Variant = v["episode"]
 		if not v["ok"]:
 			rejected += 1
 			if config.keep_rejected:
@@ -114,8 +114,8 @@ func commit(store: DotBotDemoStore, existing: Array, verdicts: Array) -> DotResu
 				drop.append(ep.id)
 			continue
 		if kept.size() >= config.cap:
-			var worst: DotBotDemoEpisode = kept[0]
-			for k: DotBotDemoEpisode in kept:
+			var worst: Variant = kept[0]
+			for k in kept:
 				if k.score < worst.score:
 					worst = k
 			if float(v["score"]) <= worst.score:

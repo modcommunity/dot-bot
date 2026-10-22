@@ -18,5 +18,8 @@ extends RefCounted
 #    DotBotBrain.ride_ended; DotBotSurfCourse.unsupported_fn, toward_goal; DotBotSurfPlanner.trace.
 # 5: the demonstration recorder. DotBotDemoSchema, DotBotDemoEpisode, DotBotDemoRecorder,
 #    DotBotDemoConfig (bind_cvars), DotBotDemoStore, DotBotDemoStoreMemory.
-const LEVEL := 5
-const OLDEST := 1
+# 6: the recorder (the level-5 DotBotDemo* classes) moved to the addon dot-bot-record with the same
+#    names. The ride harvest and book take a store, schema and episode untyped, so dot-bot compiles
+#    without it; a game that records links dot-bot-record. OLDEST rises to 6 for that reason.
+const LEVEL := 6
+const OLDEST := 6

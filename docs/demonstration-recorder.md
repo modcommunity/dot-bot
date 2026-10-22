@@ -1,6 +1,8 @@
+> The recorder (schema, episode, recorder, config, stores) moved to the addon dot-bot-record; this file keeps the whole design, and the harvest, heatmap, statistics and cloning below stay in dot-bot.
+
 # Demonstration recorder
 
-Stage 1's core is built (`addons/dot_bot/demo/`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores are built (`dot_bot_demo_store_json.gd`, `dot_bot_demo_store_sql.gd`, `DotBotDemoStore.from_config`); the ride harvest (`DotBotRideHarvest`, `DotBotRideBook`, `DotBotRideConfig` in `runtime/surf/`) is built as the replay of the recorded commands described below; pilot quantisation and statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
+Stage 1's core is built (`dot-bot-record`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores are built (`dot_bot_demo_store_json.gd`, `dot_bot_demo_store_sql.gd`, `DotBotDemoStore.from_config`); the ride harvest (`DotBotRideHarvest`, `DotBotRideBook`, `DotBotRideConfig` in `runtime/surf/`) is built as the replay of the recorded commands described below; pilot quantisation and statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
 
 ## Why
 

@@ -40,7 +40,7 @@ func _progress() -> float:
 
 
 ## One replay of [param ep]: the unperturbed one first, then each perturbed start.
-func _one(ep: DotBotDemoEpisode) -> void:
+func _one(ep: Variant) -> void:
 	var cfg := _harvest.config
 	var host: Variant = _harvest.host
 	var state: Variant = host.replay_start(ep)
@@ -63,7 +63,7 @@ func _one(ep: DotBotDemoEpisode) -> void:
 		_close(ep, true)
 
 
-func _close(ep: DotBotDemoEpisode, base_ok: bool) -> void:
+func _close(ep: Variant, base_ok: bool) -> void:
 	var cfg := _harvest.config
 	var measured := cfg.starts > 0 and _start > 0
 	var score := float(_landed) / cfg.starts if measured else (1.0 if base_ok else 0.0)

@@ -13,7 +13,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | [docs/README.md](docs/README.md) | the index |
 | [docs/design.md](docs/design.md) | why a separate addon, what the brain may know, the fight, the view, determinism |
 | [docs/surfing.md](docs/surfing.md) | anything in `runtime/surf/`, ride edges, `DotBotIntent.ride` |
-| [docs/demonstration-recorder.md](docs/demonstration-recorder.md) | recording players for bots to learn from (the core in `addons/dot_bot/demo/` is built; memory, JSON and SQL stores and the ride harvest are built; statistics are not) |
+| [docs/demonstration-recorder.md](docs/demonstration-recorder.md) | recording players for bots to learn from; the recorder itself is the addon [dot-bot-record](../dot-bot-record/CLAUDE.md), the ride harvest here is built, statistics are not |
 | [docs/presets.md](docs/presets.md) | changing a preset's number or adding a setting; what each preset is meant to be, and the measured numbers |
 | [docs/history.md](docs/history.md) | the bugs, and how each looked |
 
@@ -31,7 +31,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_roster.gd` | `DotBotRoster`: from the bots there are to the number wanted, named |
 | `addons/dot_bot/runtime/dot_bot_nav.gd`, `dot_bot_hiding.gd`, `dot_bot_search.gd` | for hiding games: a navigation mesh baked from a map's colliders; places scored by sight lines and picked apart; a seeker's memory of the places |
 | `addons/dot_bot/runtime/surf/` | surf bots: `DotBotSurfCourse` (one ride), `DotBotSurfPlanner` (the search on the motor, the cache's repair rounds), `DotBotSurfPilot` (the run-time policy and veto), `DotBotSurfRide` (one bot riding one edge while it aims) |
-| `addons/dot_bot/demo/` | the demonstration recorder: `DotBotDemoSchema` (host-declared fields), `DotBotDemoRecorder` (begin/sample/end/cancel, adaptive rate, queue, budgeted writes via `process`), `DotBotDemoConfig` (`bot_record*`, ON by default), `DotBotDemoStore` and `DotBotDemoStoreMemory` |
+| (dot-bot-record) | the demonstration recorder, schema and stores were here until API level 6 and are now their own addon, `DotBotDemo*` names unchanged. dot-bot reaches a store, schema or episode untyped (`Variant`), never by class name, so it compiles without it; the suite links `addons/dot_bot_record` |
 | `addons/dot_bot/soak/` | `DotBotSoak` (headless soak runner, JSON report, pass/fail reasons) and `DotBotSoakConfig` (thresholds); [docs/soak.md](docs/soak.md); suite `examples/soak_selftest.tscn` |
 | `examples/bot_selftest.tscn` | the suite: presets, cvars, names, roster, senses, turn rate, reaction and aim measured, duels, hiding, searching, a baked path, a surf ride on a toy simulator, a ride edge, the demonstration recorder |
 
