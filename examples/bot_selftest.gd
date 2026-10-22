@@ -14,7 +14,7 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 191
+const CHECKS := 193
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
@@ -1181,8 +1181,12 @@ func _test_ride_edges() -> void:
 	var walked_points: PackedVector3Array = walked["points"]
 	_check(walked_points.is_empty() or walked_points[walked_points.size() - 1].x < 6.0,
 		"with no ride edge a route cannot reach the far floor", "%d points" % walked_points.size())
+	_check(nav.joined(Vector3(-2.0, 0.0, 0.0), Vector3(1.0, 0.0, 1.0)) and not nav.joined(Vector3(-2.0, 0.0, 0.0), Vector3(22.0, 0.0, 0.0)),
+		"joined: the same floor yes, the far floor no, with no path query")
 	nav.add_ride(Vector3(4.0, 0.0, 0.0), Vector3(16.0, 0.0, 0.0), 7)
 	var way := nav.route(Vector3(-2.0, 0.0, 0.0), Vector3(22.0, 0.0, 0.0))
+	_check(nav.joined(Vector3(-2.0, 0.0, 0.0), Vector3(22.0, 0.0, 0.0)) and not nav.joined(Vector3(22.0, 0.0, 0.0), Vector3(-2.0, 0.0, 0.0)),
+		"joined: a ride edge joins the far floor one way only")
 	var points: PackedVector3Array = way["points"]
 	var rides: PackedInt32Array = way["rides"]
 	var at := rides.find(7)

@@ -21,5 +21,7 @@ extends RefCounted
 # 6: the recorder (the level-5 DotBotDemo* classes) moved to the addon dot-bot-record with the same
 #    names. Level 5 was never delivered to a game, so OLDEST stays 1: nothing built at 1 to 4 names
 #    a recorder class. A game that records links dot-bot-record (its own requires entry).
-const LEVEL := 6
+# 7: DotBotNav.joined (whether a walk between two points can exist, from the islands and rides,
+#    without a path query that errors between islands).
+const LEVEL := 7
 const OLDEST := 1

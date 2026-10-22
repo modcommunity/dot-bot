@@ -60,6 +60,8 @@ var _ride_of_link: Dictionary = {}
 ## Polygon index -> island, from [method islands]; empty until asked.
 var _island_of: PackedInt32Array = PackedInt32Array()
 var _islands: Array[Dictionary] = []
+## Island -> islands one ride edge reaches, for [method joined]; null until asked.
+var _ride_graph: Variant = null
 
 ## Polygon index -> cumulative area, for [method random_point].
 var _areas: PackedFloat32Array = PackedFloat32Array()
@@ -280,6 +282,7 @@ func clear() -> void:
 	_unlink_all()
 	_island_of = PackedInt32Array()
 	_islands.clear()
+	_ride_graph = null
 	if _region.is_valid():
 		NavigationServer3D.free_rid(_region)
 	if _map.is_valid():
@@ -324,6 +327,7 @@ const LINK_RADIUS := 1.5
 func add_ride(from: Vector3, to: Vector3, id: int, cost: float = 1.0) -> void:
 	var ride := {"id": id, "from": from, "to": to, "cost": cost, "rid": RID()}
 	_rides.append(ride)
+	_ride_graph = null
 	if _map.is_valid():
 		_link(ride)
 		NavigationServer3D.map_force_update(_map)
@@ -338,6 +342,7 @@ func rides() -> Array[Dictionary]:
 
 
 func clear_rides() -> void:
+	_ride_graph = null
 	_unlink_all()
 	_rides.clear()
 	if _map.is_valid():
@@ -490,6 +495,59 @@ func on_island(index: int, at: Vector3, reach: float = 0.5) -> bool:
 		if not is_nan(height) and absf(at.y - height) <= reach:
 			return true
 	return false
+
+
+## Whether a walk (over ride edges too) from [param from] to [param to] can exist, answered from
+## the mesh's islands without a path query: the navigation server prints an error for every query
+## between disconnected islands, so a game that filters places by [method path_length] fills its
+## log. Both points are snapped to the mesh. True before the mesh is baked, so a caller can
+## filter unconditionally. A game with its own idea of "reachable" (a door it can open) passes
+## its own Callable to [method DotBotHiding.choose] instead.
+func joined(from: Vector3, to: Vector3) -> bool:
+	if mesh == null:
+		return true
+	var a := _island_near(from)
+	var b := _island_near(to)
+	if a < 0 or b < 0:
+		return false
+	if a == b:
+		return true
+	var graph := _rides_between_islands()
+	var seen := {a: true}
+	var queue: Array[int] = [a]
+	while not queue.is_empty():
+		var at: int = queue.pop_back()
+		for next: int in graph.get(at, []):
+			if next == b:
+				return true
+			if not seen.has(next):
+				seen[next] = true
+				queue.append(next)
+	return false
+
+
+func _island_near(at: Vector3) -> int:
+	var snapped_at := closest(at) if is_ready() else at
+	var all := islands()
+	for island in all:
+		if on_island(int(island["index"]), snapped_at, 0.6):
+			return int(island["index"])
+	return island_at(snapped_at, 1.0)
+
+
+func _rides_between_islands() -> Dictionary:
+	if _ride_graph != null:
+		return _ride_graph
+	var graph: Dictionary = {}
+	for ride in _rides:
+		var a := _island_near(ride["from"])
+		var b := _island_near(ride["to"])
+		if a >= 0 and b >= 0 and a != b:
+			if not graph.has(a):
+				graph[a] = []
+			graph[a].append(b)
+	_ride_graph = graph
+	return graph
 
 
 ## Grid cell for [method on_island], metres.
