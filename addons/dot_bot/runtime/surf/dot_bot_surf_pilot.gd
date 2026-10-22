@@ -114,9 +114,12 @@ var tracking: bool = false
 var check_every: int = 24
 var horizon: int = 192
 var rolling: bool = true
-## Most simulator steps one tick spends on a fresh forecast or a veto (0 = all of it in one tick).
-## The rest resumes on the next ticks and the veto is judged once the forecast completes.
+## Most simulator steps one tick spends on a fresh forecast (0 = all of it in one tick). The rest
+## resumes on the next ticks and the veto is judged once the forecast completes.
 var forecast_budget: int = 24
+## The same for a veto (up to eight futures, about 2,000 steps). 0 by default: a spread veto answers
+## late, and long surf rides in game-arena stopped landing at 256 steps a tick.
+var veto_budget: int = 0
 
 ## Statistics: futures run afresh, vetoes taken, how many of those found no way out, and how
 ## often a kept forecast stopped matching.
@@ -524,7 +527,7 @@ func _veto_then_forecast(state: Variant) -> void:
 
 ## Runs up to [member forecast_budget] steps of the pending veto: every action's future in turn.
 func _veto_run() -> void:
-	var n := forecast_budget if forecast_budget > 0 else 1 << 30
+	var n := veto_budget if veto_budget > 0 else 1 << 30
 	while _vt_a < ACTIONS.size() and n > 0:
 		if _vt_s == null:
 			_vt_s = _vt_state.duplicate_state()

@@ -1159,12 +1159,12 @@ func _test_surf() -> void:
 		steps_ok = steps_ok and calls == ceili(float(whole_n) / 7.0)
 	var veto_same := 0
 	for s: ToyState in tries:
-		pilot.forecast_budget = 0
+		pilot.veto_budget = 0
 		pilot._hopeless_streak = 0
 		pilot._veto(s)
 		var whole_action: int = pilot._override
 		var whole_wait: int = pilot._cooldown
-		pilot.forecast_budget = 5
+		pilot.veto_budget = 5
 		pilot._hopeless_streak = 0
 		pilot._override = -2
 		pilot._veto(s)
@@ -1173,6 +1173,7 @@ func _test_surf() -> void:
 			pilot._veto_run()
 			veto_calls += 1
 		veto_same += 1 if pilot._override == whole_action and pilot._cooldown == whole_wait and veto_calls > 1 else 0
+	pilot.veto_budget = 0
 	pilot.forecast_budget = 24
 	pilot._drop_forecast()
 	_check(same == tries.size(), "a forecast spread over ticks ends where an all-at-once one does, with the same event", "%d of %d" % [same, tries.size()])
