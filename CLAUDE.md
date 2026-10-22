@@ -13,6 +13,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | [docs/README.md](docs/README.md) | the index |
 | [docs/design.md](docs/design.md) | why a separate addon, what the brain may know, the fight, the view, determinism |
 | [docs/surfing.md](docs/surfing.md) | anything in `runtime/surf/`, ride edges, `DotBotIntent.ride` |
+| [docs/demonstration-recorder.md](docs/demonstration-recorder.md) | recording players for bots to learn from (design; not yet built) |
 | [docs/presets.md](docs/presets.md) | changing a preset's number or adding a setting; what each preset is meant to be, and the measured numbers |
 | [docs/history.md](docs/history.md) | the bugs, and how each looked |
 
