@@ -138,6 +138,14 @@ game-hide-n-seek's `game/hs_bots.gd` is the worked example.
 
 Hard is meant to play like a good human player. Nightmare is better than a human, but its reaction never drops to zero and its aim is never exact.
 
+## Privacy of the demonstration recorder
+
+A server can record anonymous movement (where players move, how they ride ramps, how quickly they react in a fight) to teach its bots; see [docs/demonstration-recorder.md](docs/demonstration-recorder.md). What is kept: the map and its version, a schema id, the samples of one stretch of movement, its outcome, and the date. What is never kept: a name, an account id, a peer number, an address, a team roster, chat, voice, or a time finer than a day. Recording is server-side only and on by default; the server owner turns it off for the whole server with `bot_record 0` (config key `record`, or `bot_record_store off`). Suggested text for a game's README and a server's rules:
+
+> This server records anonymous movement (where players move and how they ride ramps, and how quickly they react in a fight) to teach its bots. No names, account ids, addresses or chat are recorded, and recordings are stored by map and date only. The server owner can turn this off with `bot_record 0`.
+
+Stores: JSON files (the default, `bot_record_path`), SQLite, or PostgreSQL and MySQL through a dot-sql gateway (`bot_record_url`; `bot_record_token` is read from the config file only, never the environment or the command line).
+
 ## Testing
 ```bash
 godot --headless --path . --import

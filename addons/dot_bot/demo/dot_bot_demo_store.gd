@@ -42,5 +42,36 @@ func describe_lines() -> PackedStringArray:
 	return PackedStringArray()
 
 
+## The store [param config] names, not yet open; null for "off". A database setting without dot-sql installed is said at ERROR and the JSON store is used.
+static func from_config(config: DotBotDemoConfig, host: Node = null) -> DotResult:
+	match config.store:
+		"off":
+			return DotResult.success(null)
+		"memory":
+			return DotResult.success(DotBotDemoStoreMemory.new())
+		"json":
+			return DotResult.success(DotBotDemoStoreJson.new(config.path))
+	# dot-sql is reached by path: naming DotSql would make a pack fail to parse on a host without it.
+	var script_path := "res://addons/dot_sql/core/dot_sql.gd"
+	if not ResourceLoader.exists(script_path):
+		DotLog.error("bot.demo.store", "bot_record_store is %s but dot-sql is not installed; recording to files" % config.store)
+		return DotResult.success(DotBotDemoStoreJson.new(config.path))
+	var db := {"driver": "sqlite", "dialect": "sqlite", "path": config.path}
+	if config.store == "sqlite":
+		if config.path.get_extension() == "":
+			db["path"] = config.path.path_join("demos.db")
+		var made_dir := DotPaths.ensure_parent_dir(db["path"])
+		if not made_dir.ok:
+			return made_dir
+	else:
+		db = {"driver": "gateway", "dialect": config.store, "url": config.url, "token": config.token}
+	var sql_script: Script = load(script_path)
+	var made: DotResult = sql_script.call("from_config", db, host)
+	if not made.ok or made.value == null:
+		DotLog.error("bot.demo.store", "the demonstration database settings are not usable; recording to files")
+		return DotResult.success(DotBotDemoStoreJson.new(config.path))
+	return DotResult.success(DotBotDemoStoreSql.new(made.value))
+
+
 func _unsupported(what: String) -> DotResult:
 	return DotResult.fail(DotError.CODE_UNSUPPORTED, "This store does not support %s." % what)
