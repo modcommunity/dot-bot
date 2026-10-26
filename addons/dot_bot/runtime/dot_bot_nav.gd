@@ -39,6 +39,12 @@ const CELL_HEIGHT := 0.1
 ## The baked mesh, or null before [method bake].
 var mesh: NavigationMesh = null
 
+## Boxes the next bake cuts out of the mesh, so no path ends inside one: a kill volume a bot would
+## walk into. A box reaches [member avoid_body] metres below its floor too, since a body is hit by
+## what overlaps its column. Kept across [method clear] and a re-bake, like the ride edges.
+var avoid: Array[AABB] = []
+var avoid_body: float = 1.8
+
 ## How long the last bake took, milliseconds: from the parse to the mesh taken in, so a
 ## [method bake_in_background] counts the time it spent on its thread.
 var bake_ms: float = 0.0
@@ -157,6 +163,12 @@ func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotRes
 	NavigationServer3D.parse_source_geometry_data(mesh, source, root)
 	for body: Node in bodies:
 		body.remove_from_group(group)
+	for box in avoid:
+		var lo := box.position
+		var hi := box.end
+		source.add_projected_obstruction(PackedVector3Array([
+			Vector3(lo.x, 0.0, lo.z), Vector3(hi.x, 0.0, lo.z), Vector3(hi.x, 0.0, hi.z), Vector3(lo.x, 0.0, hi.z)]),
+			lo.y - avoid_body, box.size.y + avoid_body, true)
 	return DotResult.success(source)
 
 
@@ -650,6 +662,7 @@ func describe() -> Dictionary:
 		"area": snappedf(_total_area, 0.1),
 		"bake_ms": snappedf(bake_ms, 0.1),
 		"rides": _rides.size(),
+		"avoid": avoid.size(),
 	}
 
 

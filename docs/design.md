@@ -68,3 +68,7 @@ Not every game's bots fight. A hiding game's bots need to know where people hide
 - **`DotBotSearch`**: a seeker's memory of the places. A place is crossed off only when the seeker has had it in view; a sound puts the places near it back first; another seeker's target is scored down so two seekers split a house. It never learns where anybody is from anything but its own eyes and ears.
 
 game-hide-n-seek's `examples/headless_bots` holds the result to bands over whole rounds; its numbers are in that game's `docs/design.md`.
+
+## Links from a map's own entities
+
+`DotBotLinks.read(world)` takes a built map world (dot-map's, by duck typing) and returns plain data: the teleports a runner can fire now, the hurt volumes that kill, and the movers that open by touch. `carve(nav)` puts the kill boxes into `DotBotNav.avoid` before a bake, so a path ends short of them instead of through them. `join(nav)` adds each teleport as an edge with an id at or above `TELEPORT_ID`, so a path crosses it and nothing is ridden. A volume that is disabled, filtered or not for clients is counted in `skipped` and left out; a teleport a button enables later is not known, so the path stops short of it. `doors_touched` names the touch doors a body overlaps so the caller can fire them.

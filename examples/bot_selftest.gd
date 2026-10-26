@@ -14,14 +14,14 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 196
+const CHECKS := 211
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 23
+const SECTIONS := 25
 
 const TICK := 1.0 / 64.0
 
@@ -173,6 +173,8 @@ func _run() -> void:
 	await _test_nav()
 	_test_surf()
 	await _test_ride_edges()
+	await _test_links()
+	await _test_kill_avoidance()
 	_test_harvest_verify()
 	await _test_harvest_store()
 	_test_ride_book()
@@ -195,6 +197,174 @@ func _run() -> void:
 		get_tree().quit(1)
 		return
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+# --- Links from a map's entities -----------------------------------------------
+
+class FakeVolume extends RefCounted:
+	var kind := ""
+	var spawnflags := 1
+	var filter := ""
+	var target := ""
+	var entity := -1
+	var record := {}
+	var box := AABB()
+
+	func bounds() -> AABB:
+		return box
+
+
+class FakeNode extends RefCounted:
+	var volume: FakeVolume = null
+	var entity: Object = null
+	var on := true
+
+	func active() -> bool:
+		return on
+
+
+class FakeMover extends RefCounted:
+	var touch := true
+
+
+class FakeEntity extends RefCounted:
+	var mover: FakeMover = FakeMover.new()
+	var index := 0
+	var hit_half := Vector3.ZERO
+	var hit_frame := Transform3D.IDENTITY
+
+
+class FakeIo extends RefCounted:
+	var destinations := {}
+	var entities: Array = []
+
+
+class FakeWorld extends RefCounted:
+	var io := FakeIo.new()
+	var volumes := FakeVolumes.new()
+
+
+class FakeVolumes extends RefCounted:
+	var nodes: Array = []
+
+
+static func _fake_volume(world: FakeWorld, kind: String, box: AABB, fields: Dictionary = {}, on: bool = true) -> void:
+	var v := FakeVolume.new()
+	v.kind = kind
+	v.box = box
+	v.entity = world.volumes.nodes.size()
+	for k: String in fields:
+		if k == "damage":
+			v.record = {"damage": fields[k]}
+		else:
+			v.set(k, fields[k])
+	var n := FakeNode.new()
+	n.volume = v
+	n.on = on
+	world.volumes.nodes.append(n)
+
+
+func _floors(centres: Array, size: Vector3) -> Array:
+	var root := Node3D.new()
+	add_child(root)
+	var still := StaticBody3D.new()
+	root.add_child(still)
+	for centre: Vector3 in centres:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(size.x, 0.2, size.z)
+		shape.shape = box
+		shape.position = centre + Vector3(0.0, -0.1, 0.0)
+		still.add_child(shape)
+	await get_tree().physics_frame
+	return [root, still]
+
+
+## Teleports and touch doors read from a map's entities; a teleport is an edge the path crosses.
+func _test_links() -> void:
+	_section("links: a map's teleports join the mesh, touch doors are found, what a runner cannot fire is left out")
+	var made := await _floors([Vector3(0.0, 0.0, 0.0), Vector3(30.0, 0.0, 0.0)], Vector3(10.0, 0.0, 10.0))
+	var world := FakeWorld.new()
+	world.io.destinations = {"far": {"at": [30.0, 0.05, 0.0]}, "air": {"at": [30.0, 20.0, 0.0]}}
+	_fake_volume(world, "teleport", AABB(Vector3(3.0, 0.0, -1.0), Vector3(1.0, 2.0, 2.0)), {"target": "far"})
+	_fake_volume(world, "teleport", AABB(Vector3(-3.0, 0.0, -1.0), Vector3(1.0, 2.0, 2.0)), {"target": "far"}, false)
+	_fake_volume(world, "teleport", AABB(Vector3(-3.0, 0.0, 3.0), Vector3(1.0, 2.0, 1.0)), {"target": "far", "filter": "terrorists"})
+	_fake_volume(world, "teleport", AABB(Vector3(-3.0, 0.0, -4.0), Vector3(1.0, 2.0, 1.0)), {"target": "far", "spawnflags": 2})
+	_fake_volume(world, "teleport", AABB(Vector3(-3.0, 0.0, 2.0), Vector3(1.0, 2.0, 1.0)), {"target": "nowhere"})
+	_fake_volume(world, "teleport", AABB(Vector3(0.0, 8.0, 0.0), Vector3(1.0, 2.0, 1.0)), {"target": "far"})
+	_fake_volume(world, "teleport", AABB(Vector3(1.0, 0.0, 3.0), Vector3(1.0, 2.0, 1.0)), {"target": "air"})
+	var door := FakeEntity.new()
+	door.index = 41
+	door.hit_half = Vector3(0.1, 1.5, 1.0)
+	door.hit_frame = Transform3D(Basis.IDENTITY, Vector3(0.0, 1.5, -4.0))
+	world.io.entities.append(door)
+	var button := FakeEntity.new()
+	button.mover.touch = false
+	button.hit_half = Vector3.ONE
+	world.io.entities.append(button)
+
+	var links := DotBotLinks.read(world)
+	_check(links.teleports.size() == 3 and links.skipped == {"disabled": 1, "filtered": 1, "flags": 1, "no_destination": 1},
+		"read: three teleports a runner can fire, four left out with their reasons", str(links.describe()))
+	_check(links.doors.size() == 1 and int(links.doors[0]["index"]) == 41, "read: one touch door; a mover that is not touched is not one")
+	_check(links.doors_touched(Vector3(0.0, 0.0, -3.5), 0.35, 1.8) == PackedInt32Array([41])
+		and links.doors_touched(Vector3(0.0, 0.0, 0.0), 0.35, 1.8).is_empty(), "a body walking into the door touches it, one across the room does not")
+
+	var nav := DotBotNav.new()
+	var baked := nav.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+	var goal := Vector3(30.0, 0.0, 0.0)
+	var before := nav.path(Vector3(-2.0, 0.0, 0.0), goal)
+	_check(baked.ok and (before.is_empty() or before[before.size() - 1].x < 6.0), "without the links the far floor is out of reach")
+	var stats := links.join(nav)
+	_check(stats == {"joined": 1, "off_mesh": 1, "stranded": 1}, "join: the one on the floor joins, the one in mid-air has no floor, the one landing in mid-air is stranded", str(stats))
+	var after := nav.path(Vector3(-2.0, 0.0, 0.0), goal)
+	_check(not after.is_empty() and after[after.size() - 1].distance_to(goal) < 0.8, "with them the path reaches the far floor")
+	var hop := nav.route(Vector3(-2.0, 0.0, 0.0), goal)
+	var mark := (hop["rides"] as PackedInt32Array).find(DotBotLinks.TELEPORT_ID)
+	var points: PackedVector3Array = hop["points"]
+	_check(mark >= 0 and points[mark].x > 2.9 and points[mark].x < 4.1 and points[mark + 1].distance_to(Vector3(30.0, 0.05, 0.0)) < 0.6,
+		"the route says where the teleport starts (inside its box) and lands", str(hop["rides"]))
+	var empty := DotBotLinks.read(null)
+	_check(empty.teleports.is_empty() and empty.kills.is_empty() and empty.doors.is_empty(), "no map, no links")
+	nav.clear()
+	made[0].queue_free()
+	_done()
+
+
+## Kill volumes cut out of the mesh: a path stops short of one, a harmless volume is not cut.
+func _test_kill_avoidance() -> void:
+	_section("kill avoidance: a path ends short of a kill volume")
+	var made := await _floors([Vector3(0.0, 0.0, 0.0)], Vector3(40.0, 0.0, 6.0))
+	var world := FakeWorld.new()
+	_fake_volume(world, "hurt", AABB(Vector3(-1.0, -0.2, -4.0), Vector3(2.0, 1.0, 8.0)), {"damage": 1000.0})
+	_fake_volume(world, "hurt", AABB(Vector3(8.0, -0.2, -4.0), Vector3(2.0, 1.0, 8.0)), {"damage": 10.0})
+	_fake_volume(world, "hurt", AABB(Vector3(14.0, -0.2, -4.0), Vector3(2.0, 1.0, 8.0)), {"damage": 1000.0}, false)
+	_fake_volume(world, "hurt", AABB(Vector3(-12.0, 6.0, -4.0), Vector3(2.0, 1.0, 8.0)), {"damage": 1000.0})
+	var links := DotBotLinks.read(world)
+	_check(links.kills.size() == 2 and links.skipped == {"disabled": 1}, "read: only enabled volumes that kill count (the weak and the disabled do not)", str(links.describe()))
+	_check(is_equal_approx(links.kills[0].size.x, 2.8), "a kill box is grown by the margin", str(links.kills[0]))
+
+	var plain := DotBotNav.new()
+	var open := plain.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+	var end := Vector3(15.0, 0.0, 0.0)
+	var through := plain.path(Vector3(-15.0, 0.0, 0.0), end)
+	_check(open.ok and not through.is_empty() and through[through.size() - 1].distance_to(end) < 0.6, "without avoidance the path crosses the kill volume")
+	plain.clear()
+
+	var nav := DotBotNav.new()
+	links.carve(nav)
+	var baked := nav.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+	var stopped := nav.path(Vector3(-15.0, 0.0, 0.0), end)
+	var last: Vector3 = stopped[stopped.size() - 1] if not stopped.is_empty() else Vector3.INF
+	_check(baked.ok and not stopped.is_empty() and last.x < -1.0 and last.x > -3.5, "with it the path stops short of the volume", str(last))
+	var same_side := nav.path(Vector3(-15.0, 0.0, 0.0), Vector3(-6.0, 0.0, 2.0))
+	_check(not same_side.is_empty() and same_side[same_side.size() - 1].distance_to(Vector3(-6.0, 0.0, 2.0)) < 0.6, "and its own side of the floor is still walked")
+	var weak := nav.path(Vector3(5.0, 0.0, 0.0), Vector3(12.0, 0.0, 0.0))
+	_check(not weak.is_empty() and weak[weak.size() - 1].distance_to(Vector3(12.0, 0.0, 0.0)) < 0.6, "a volume that does not kill is walked through")
+	_check(nav.describe()["avoid"] == 2, "describe counts the boxes avoided")
+	nav.clear()
+	made[0].queue_free()
+	_done()
 
 
 # --- Hiding, searching, walking ------------------------------------------------
