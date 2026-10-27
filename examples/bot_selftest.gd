@@ -14,14 +14,14 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 211
+const CHECKS := 226
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 25
+const SECTIONS := 26
 
 const TICK := 1.0 / 64.0
 
@@ -160,6 +160,7 @@ func _run() -> void:
 	_test_cvars()
 	_test_console()
 	_test_names()
+	_test_personas()
 	_test_roster()
 	_test_intent()
 	_test_aim()
@@ -713,6 +714,65 @@ func _test_names() -> void:
 	_check(DotBotNames.pick([], 7) == DotBotNames.pick([], 7), "the same salt gives the same name")
 	_check(DotBotNames.pick([], 7, [], "[BOT] ").begins_with("[BOT] "), "a prefix when a game wants one")
 	_check(DotBotNames.pick(["Ann"], 3, ["Ann", "Bea"]) == "Bea", "a game's own pool")
+	_done()
+
+
+func _test_personas() -> void:
+	_section("personas: a mix that never idles, a weighted pool, a server override")
+
+	var medic := DotBotPersona.from_values("medic", {"support": 8.0, "hunt": 1.0, "loot": 0.0, "hold": 0.0, "scout": 0.0, "weight": 3.0})
+	var seen := {}
+	for i in 200:
+		seen[medic.pick(float(i) / 200.0)] = true
+	_check(seen.has(DotBotPersona.SUPPORT) and seen.has(DotBotPersona.HUNT), "a mix picks from its weighted behaviours")
+	_check(not seen.has(DotBotPersona.LOOT) and not seen.has(&"idle") and not seen.has(&""), "a zero weight is never picked, and idle is not a behaviour")
+	var zero := DotBotPersona.from_values("zero", {"hunt": 0.0, "loot": 0.0, "hold": 0.0, "support": 0.0, "scout": 0.0})
+	var any := {}
+	for i in 100:
+		any[zero.pick(float(i) / 100.0)] = true
+	_check(any.size() == DotBotPersona.BEHAVIOURS.size(), "an all-zero mix counts every behaviour equal rather than idling")
+	var repeats := 0
+	for i in 100:
+		if medic.pick(float(i) / 100.0, DotBotPersona.SUPPORT) == DotBotPersona.SUPPORT:
+			repeats += 1
+	_check(repeats == 0, "the last behaviour is not repeated while another has weight")
+	var only := DotBotPersona.from_values("only", {"hunt": 5.0, "loot": 0.0, "hold": 0.0, "support": 0.0, "scout": 0.0})
+	_check(only.pick(0.5, DotBotPersona.HUNT) == DotBotPersona.HUNT, "a one-behaviour mix repeats rather than idles")
+
+	var pool := DotBotPersonaPool.new()
+	_check(pool.draw(0.3).id == &"balanced" and pool.candidates().size() == 1, "an empty pool still holds one balanced persona")
+	pool.personas = [medic, DotBotPersona.from_values("scout", {"weight": 1.0}), DotBotPersona.from_values("off", {"weight": 0.0})]
+	var counts := {}
+	for i in 400:
+		var p := pool.draw((float(i) + 0.5) / 400.0)
+		counts[p.id] = int(counts.get(p.id, 0)) + 1
+	_check(counts.get(&"medic", 0) == 300 and counts.get(&"scout", 0) == 100 and not counts.has(&"off"), "weights 3:1 give 300:100 and a zero weight never")
+	pool.set_override("scout:1, bogus:x ,medic:0")
+	_check(pool.override == {&"scout": 1.0, &"bogus": 1.0, &"medic": 0.0}, "an override parses (a bare or bad weight is 1)")
+	var forced := {}
+	for i in 50:
+		forced[pool.draw(float(i) / 50.0).id] = true
+	_check(forced.keys() == [&"scout"], "an override replaces the weights and drops what it does not name")
+	pool.set_override("")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var first := pool.assign(&"b1", rng)
+	_check(pool.assign(&"b1", rng) == first, "a bot keeps its persona")
+	var varied := {}
+	for i in 24:
+		varied[pool.assign(StringName("x%d" % i), rng).id] = true
+	_check(varied.size() >= 2, "bots drawn from the pool differ")
+	pool.release(&"b1")
+	_check(not pool.describe()["given"].has("b1"), "released")
+
+	var base := DotBotProfile.preset("medium")
+	_check(DotBotPersona.from_values("p", {}).profile_over(base) == null, "no skill stated shares the game's settings")
+	var sharp := DotBotPersona.from_values("sharp", {"difficulty": "hard", "skill": {"reaction": 0.5}}).profile_over(base)
+	_check(sharp != null and sharp.preset_name == "hard" and is_equal_approx(sharp.reaction, 0.5) and is_equal_approx(sharp.fov, 120.0), "a persona's difficulty and skill values")
+	var schema_names: Array = []
+	for f: Dictionary in DotBotPersona.schema():
+		schema_names.append(f["name"])
+	_check(schema_names.has("hunt") and schema_names.has("support") and schema_names.has("weight") and schema_names.has("skill"), "the profile schema names the mix, weight and skill")
 	_done()
 
 

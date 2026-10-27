@@ -482,7 +482,7 @@ func _read_gadgets(world: Object, io: Object) -> void:
 		roots[int(volume.get("entity"))] = {"index": int(volume.get("entity")), "kind": "walk", "box": bounds, "node": node}
 	for e: Object in io.get("entities"):
 		var mover: Object = e.get("mover")
-		if mover == null or not bool(mover.get("use")) or str(mover.get("kind")) in ["spin", "path"]:
+		if mover == null or mover.get("use") != true or str(mover.get("kind")) in ["spin", "path"]:
 			continue
 		var half: Vector3 = e.get("hit_half")
 		if half == Vector3.ZERO:

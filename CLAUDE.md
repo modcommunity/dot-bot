@@ -25,6 +25,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/core/dot_bot_settings.gd` | `DotBotSettings`: the live values of one game, `bot_difficulty`, overrides, `bind_cvars` (server), `bind_console` (solo) |
 | `addons/dot_bot/core/dot_bot_contact.gd`, `dot_bot_intent.gd` | what the brain reads (a body) and returns (what it would press) |
 | `addons/dot_bot/core/dot_bot_names.gd` | `DotBotNames`: the name pool |
+| `addons/dot_bot/core/dot_bot_persona.gd`, `runtime/dot_bot_persona_pool.gd` | `DotBotPersona` (profile kind `bot`: a hunt/loot/hold/support/scout mix, a pool weight, a difficulty and skill override; `pick` never returns idle) and `DotBotPersonaPool` (the weighted draw per bot, a per-server `id:weight` override, built from a dot-profile set by duck typing) |
 | `addons/dot_bot/runtime/dot_bot_world.gd` | `DotBotWorld`: all a brain may know (bodies, line of sight, waypoints, sounds) |
 | `addons/dot_bot/runtime/dot_bot_aim.gd` | `DotBotAim`: the view, the aim error, the reaction and the trigger; the brain's, and a game with its own decisions uses it alone |
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
