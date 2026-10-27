@@ -14,14 +14,14 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 226
+const CHECKS := 229
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 26
+const SECTIONS := 27
 
 const TICK := 1.0 / 64.0
 
@@ -164,6 +164,7 @@ func _run() -> void:
 	_test_roster()
 	_test_intent()
 	_test_aim()
+	_test_fire_mode()
 	_test_senses()
 	_test_turning()
 	_test_reaction_and_aim()
@@ -821,6 +822,17 @@ func _test_intent() -> void:
 	_check(f.buttons == (FakeFire.BUTTON_ATTACK | FakeFire.BUTTON_USER_0), "trigger and the game's throw button", str(f.buttons))
 	_check(DotBotIntent.direction(0.0, 0.0).is_equal_approx(Vector3(0, 0, -1)), "yaw 0 looks down -Z")
 	_check(DotBotIntent.direction(90.0, 0.0).is_equal_approx(Vector3(-1, 0, 0)), "yaw 90 looks down -X")
+	_done()
+
+
+func _test_fire_mode() -> void:
+	_section("DotBotFireMode picks by range")
+	var f := DotBotFireMode.new()
+	var all := PackedStringArray(["auto", "semi", "burst"])
+	_check(f.pick(5.0, all) == "auto" and f.pick(20.0, all) == "burst" and f.pick(50.0, all) == "semi", "auto close, burst mid, semi far")
+	_check(f.pick(50.0, PackedStringArray(["auto", "burst"])) == "burst" and f.pick(5.0, PackedStringArray(["auto"])) == "", "falls to what the gun has; one mode picks nothing")
+	f.rule = func(_d: float, _m: PackedStringArray) -> String: return "semi"
+	_check(f.pick(1.0, all) == "semi", "a rule overrides")
 	_done()
 
 
