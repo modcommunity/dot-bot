@@ -43,6 +43,10 @@ The view, the aim error, the reaction and the trigger are `DotBotAim`, which the
 
 **A target killed in view is forgotten.** A person moves on after a kill; a bot that searched for it stood pre-aiming the body for its whole memory (seen in the first render). A sound or a lost target the bot is not going after holds it for a glance (1.2 s), not its whole memory, for the same reason: a bot staring at a wall for four seconds reads as stuck.
 
+### Simulated bullets
+
+With the server's `sv_ballistics` on, a bullet drops and takes time to arrive, and a hitscan aim misses. `DotBotAim.aim_solver` is an optional callable `func(eye, point, velocity) -> Vector3` that `track` uses in place of the plain lead; unset (the default) changes nothing. `DotBotAimSolver.solve(muzzle, target, velocity, tuning)` is a ready one: it iterates flight time and bore pitch a few times, reads `muzzle_velocity`, `bullet_gravity` and `drag` off the tuning by duck typing (a dot-weapon `DotWeaponBallistics`, or a dictionary), and returns the plain point when there is no tuning or no solution. dot-bot does not depend on dot-weapon.
+
 ## Presets and overrides
 
 `DotBotProfile.SPEC` is the one table: per setting its range, its value in each of the four presets, and its help line. `DotBotSettings` holds one game's live profile and its overrides:

@@ -14,14 +14,14 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 235
+const CHECKS := 243
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 28
+const SECTIONS := 29
 
 const TICK := 1.0 / 64.0
 
@@ -183,6 +183,7 @@ func _run() -> void:
 	_test_ride_book()
 	await _test_ride_book_store()
 	_test_ride_pick()
+	_test_aim_solver()
 
 	print("")
 	print("%d passed, %d failed" % [_passed, _failed])
@@ -1215,6 +1216,34 @@ func _hits(from: Vector3, dir: Vector3, chest: Vector3) -> bool:
 	if along <= 0.0:
 		return false
 	return (to - dir * along).length() <= 0.3
+
+
+func _test_aim_solver() -> void:
+	_section("aim solver: drop and lead for simulated bullets, plain aim without tuning")
+	var tuning := {"muzzle_velocity": 400.0, "bullet_gravity": 1.0, "drag": 0.0005}
+	var eye := Vector3(0.0, 1.6, 0.0)
+	var far := Vector3(0.0, 1.6, -150.0)
+	var p := DotBotAimSolver.solve(eye, far, Vector3.ZERO, tuning)
+	_check(p.y > far.y + 0.3 and absf(p.x) < 0.001 and absf(p.z - far.z) < 0.001, "a still target at range is aimed above, for drop", str(p))
+	var mv := DotBotAimSolver.solve(eye, far, Vector3(10.0, 0.0, 0.0), tuning)
+	_check(mv.x > 1.0 and mv.y > far.y, "a target crossing right is led to the right", str(mv))
+	var ml := DotBotAimSolver.solve(eye, far, Vector3(-10.0, 0.0, 0.0), tuning)
+	_check(ml.x < -1.0 and absf(ml.x + mv.x) < 0.5, "and to the left when crossing left, by the same amount", str(ml))
+	_check(DotBotAimSolver.solve(eye, far, Vector3(10.0, 0.0, 0.0), null) == far, "no tuning gives the plain aim point")
+	_check(DotBotAimSolver.solve(eye, far, Vector3.ZERO, {"muzzle_velocity": 0.0}) == far, "a hitscan weapon (no muzzle velocity) gives the plain aim point")
+	var out := Vector3(0.0, 1.6, -5000.0)
+	_check(DotBotAimSolver.solve(eye, out, Vector3.ZERO, tuning) == out, "no solution (out of reach) falls back to the plain aim point")
+	var aim := DotBotAim.new(1, DotBotSettings.new())
+	_check(not aim.aim_solver.is_valid(), "off by default: no solver is assigned")
+	var plain := DotBotAim.new(2, DotBotSettings.new())
+	var solved := DotBotAim.new(2, DotBotSettings.new())
+	solved.aim_solver = func(e: Vector3, pt: Vector3, v: Vector3) -> Vector3: return DotBotAimSolver.solve(e, pt, v, tuning)
+	var _a := plain.engage(7, eye, far, 0.0)
+	var _b := solved.engage(7, eye, far, 0.0)
+	var va := plain.track(eye, far, Vector3.ZERO, 5.0, 0.1)
+	var vb := solved.track(eye, far, Vector3.ZERO, 5.0, 0.1)
+	_check(vb.y != va.y or vb.x != va.x, "an assigned solver changes where track aims")
+	_done()
 
 
 # --- Harness --------------------------------------------------------------------------

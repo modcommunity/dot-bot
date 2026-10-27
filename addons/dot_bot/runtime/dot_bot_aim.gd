@@ -43,6 +43,10 @@ const RESUME_WINDOW := 1.5
 
 var settings: DotBotSettings = null
 
+## Optional `func(eye: Vector3, point: Vector3, velocity: Vector3) -> Vector3` returning the point to
+## aim at (lead and drop). Unset (the default) keeps the plain aim; see [DotBotAimSolver].
+var aim_solver: Callable = Callable()
+
 ## The view, command degrees. The caller syncs it with [method view_from] each tick.
 var yaw: float = 0.0
 var pitch: float = 0.0
@@ -139,7 +143,9 @@ func track(eye: Vector3, point: Vector3, velocity: Vector3, now: float, dt: floa
 	var p := settings.profile
 	_decay(dt)
 	var aim := point - velocity * (1.0 - p.prediction) * TRACK_LAG
-	if projectile_speed > 0.0:
+	if aim_solver.is_valid():
+		aim = aim_solver.call(eye, aim, velocity)
+	elif projectile_speed > 0.0:
 		aim += velocity * (eye.distance_to(aim) / projectile_speed) * p.prediction
 	var want := angles_to(eye, aim)
 	_err_angle += _err_spin * dt
