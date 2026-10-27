@@ -316,7 +316,7 @@ func _test_links() -> void:
 	var before := nav.path(Vector3(-2.0, 0.0, 0.0), goal)
 	_check(baked.ok and (before.is_empty() or before[before.size() - 1].x < 6.0), "without the links the far floor is out of reach")
 	var stats := links.join(nav)
-	_check(stats == {"joined": 1, "off_mesh": 1, "stranded": 1}, "join: the one on the floor joins, the one in mid-air has no floor, the one landing in mid-air is stranded", str(stats))
+	_check(int(stats.get("joined", 0)) == 1 and int(stats.get("off_mesh", 0)) == 1 and int(stats.get("stranded", 0)) == 1, "join: the one on the floor joins, the one in mid-air has no floor, the one landing in mid-air is stranded", str(stats))
 	var after := nav.path(Vector3(-2.0, 0.0, 0.0), goal)
 	_check(not after.is_empty() and after[after.size() - 1].distance_to(goal) < 0.8, "with them the path reaches the far floor")
 	var hop := nav.route(Vector3(-2.0, 0.0, 0.0), goal)

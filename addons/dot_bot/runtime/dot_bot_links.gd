@@ -31,6 +31,14 @@ const CHANNEL := "dot.bot.links"
 
 ## Ride ids from here up are teleports, so a game's own ride ids (surf edges) are never confused with them.
 const TELEPORT_ID := 1000000
+## Ride ids from here up are drops off the mesh's rims ([method DotBotNav.find_drops]).
+const DROP_ID := 2000000
+## Ride ids from here up are the legs of a platform ride (a train carrying a body between two stops).
+const PLATFORM_ID := 3000000
+## Ride ids from here up are jumps across a gap ([method DotBotNav.find_hops]).
+const HOP_ID := 4000000
+## Metres a platform's centre may be from a stop and count as standing there.
+const STOP_REACH := 0.8
 ## A teleport's travel cost per metre: the trip is instant, but not free, so a short walk still wins.
 const TELEPORT_COST := 0.01
 ## Metres a mesh point may be from a destination and still join it (the nav map's link radius).
@@ -55,7 +63,20 @@ var off_mesh: Array[Dictionary] = []
 var skipped: Dictionary = {}
 ## What [method join] found: `{"joined", "off_mesh", "stranded"}`.
 var joined: Dictionary = {}
+## `{"node": Node3D, "mover": Object}` per door or slide that swings or slides from a closed pose, for [method pose_open].
+var swings: Array[Dictionary] = []
+## `{"ent": Object, "node": Node3D, "stops": Array[Vector3] (the platform's centre at each corner), "top": float, "half": Vector3}`
+## per train that is a raft or lift rather than a wall: thin and wide enough to stand on.
+var platforms: Array[Dictionary] = []
+## `{"from": Vector3, "to": Vector3, "platform": int, "stop_from": int, "stop_to": int, "id": int}` per leg a train carries a body.
+var platform_links: Array[Dictionary] = []
+var _platforms_joined := false
 var _attached := {}
+## Whether [method join] adds drop edges down from the mesh's rims, and how many it added.
+var drops: bool = true
+var dropped: int = 0
+var hopped: int = 0
+var _dropped_once := false
 ## Metres a button may be used from, and how far from the mesh a teleport box may lie and still be entered by a step.
 const USE_REACH := 1.6
 const ENTRY_SLACK := 1.0
@@ -84,6 +105,8 @@ static func read(world: Object, options: Dictionary = {}) -> DotBotLinks:
 	if io != null:
 		for e: Object in io.get("entities"):
 			links._read_door(e)
+			links._read_swing(e)
+			links._read_platform(e)
 		links._read_gadgets(world, io)
 	return links
 
@@ -118,6 +141,15 @@ func join(nav: DotBotNav) -> Dictionary:
 		_attached[i] = true
 		t["from"] = from
 		stats["joined"] += 1
+	if not _platforms_joined:
+		_platforms_joined = true
+		stats["platforms"] = _join_platforms(nav)
+	if drops and not _dropped_once:
+		_dropped_once = true
+		dropped = nav.find_drops(DROP_ID)
+		stats["drops"] = dropped
+		hopped = nav.find_hops(HOP_ID) if drops else 0
+		stats["hops"] = hopped
 	joined = stats
 	return stats
 
@@ -207,9 +239,126 @@ func doors_touched(feet: Vector3, radius: float, height: float) -> PackedInt32Ar
 	return out
 
 
+## Poses every door and slide open (its fully travelled pose), returning what [method restore] needs. Call just
+## before a bake and restore right after: [b]the bake parses on the calling tick[/b], so the map never shows it.
+## A door baked shut is a wall on the mesh and the way through it is never walked to; baked open, the path goes
+## through and the bot touches or opens it on arrival.
+func pose_open() -> Array[Dictionary]:
+	var undo: Array[Dictionary] = []
+	for swing in swings:
+		var node: Node3D = swing["node"]
+		var mover: Object = swing["mover"]
+		if node == null or not is_instance_valid(node):
+			continue
+		undo.append({"node": node, "was": node.transform})
+		var t: Transform3D = mover.call("transform_at", 1.0, 1.0)
+		node.transform = Transform3D(t.basis * node.transform.basis, node.transform.origin + t.origin)
+	return undo
+
+
+## Puts the nodes [method pose_open] moved back.
+func restore(undo: Array[Dictionary]) -> void:
+	for entry in undo:
+		(entry["node"] as Node3D).transform = entry["was"]
+
+
+## The collision bodies of the doors and slides, which a bake given only static bodies leaves out.
+func swing_bodies() -> Array:
+	var out: Array = []
+	for swing in swings:
+		var node: Node = swing["node"]
+		if node != null and is_instance_valid(node):
+			for body in node.find_children("*", "CollisionObject3D", true, false):
+				out.append(body)
+	return out
+
+
+## Static copies of every platform's collision at each of its stops, under [param root], so a bake sees a floor
+## wherever a raft can lie. [b]Copies, not the body moved[/b]: one body cannot stand at two stops. Free them with
+## [method free_stop_bodies] right after the bake (it parses on the calling tick).
+func stop_bodies(root: Node3D, io: Object) -> Array:
+	var out: Array = []
+	var inverse := root.global_transform.affine_inverse()
+	for index in platforms.size():
+		var platform := platforms[index]
+		var node: Node3D = platform["node"]
+		if node == null or not is_instance_valid(node):
+			continue
+		var stops: Array = platform["stops"]
+		var now_at := platform_centre(index, io)
+		for k in stops.size():
+			var shift: Vector3 = stops[k] - now_at
+			var body := StaticBody3D.new()
+			root.add_child(body)
+			body.transform = Transform3D(Basis.IDENTITY, shift)
+			for shape_node in node.find_children("*", "CollisionShape3D", true, false):
+				var cs := shape_node as CollisionShape3D
+				var copy := CollisionShape3D.new()
+				copy.shape = cs.shape
+				body.add_child(copy)
+				copy.transform = inverse * cs.global_transform
+			out.append(body)
+	return out
+
+
+func free_stop_bodies(bodies: Array) -> void:
+	for body: Node in bodies:
+		if is_instance_valid(body):
+			body.get_parent().remove_child(body)
+			body.free()
+
+
+## Where the platform's centre is now, from the train's own clock.
+func platform_centre(index: int, io: Object) -> Vector3:
+	var p: Dictionary = platforms[index]
+	var ent: Object = p["ent"]
+	var corners: Array = ent.get("_corners")
+	var s: float = ent.call("path_at", int(io.get("now")), int(io.get("rate")))
+	return (ent.get("hit_frame") as Transform3D).origin + (ent.call("path_point", s) as Vector3) - (corners[0] as Vector3)
+
+
+## Whether the platform is within [constant STOP_REACH] (flat) of its stop [param stop].
+func platform_at_stop(index: int, stop: int, io: Object) -> bool:
+	var c := platform_centre(index, io)
+	var target: Vector3 = platforms[index]["stops"][stop]
+	return Vector2(c.x - target.x, c.z - target.z).length() < STOP_REACH
+
+
+## The platform leg whose start is within [param reach] metres (flat, and a step in height) of [param at], or {}.
+func platform_link_near(at: Vector3, reach: float) -> Dictionary:
+	for leg in platform_links:
+		var from: Vector3 = leg["from"]
+		if Vector2(from.x - at.x, from.z - at.z).length() < reach and absf(from.y - at.y) < 1.0:
+			return leg
+	return {}
+
+
+func _join_platforms(nav: DotBotNav) -> int:
+	var count := 0
+	for i in platforms.size():
+		var stops: Array = platforms[i]["stops"]
+		var top: float = platforms[i]["top"]
+		var points: Array = []
+		for stop: Vector3 in stops:
+			var near := nav.closest(Vector3(stop.x, top, stop.z))
+			var ok := Vector2(near.x - stop.x, near.z - stop.z).length() < 0.9 and absf(near.y - top) < 0.8
+			points.append(near if ok else Vector3.INF)
+		for k in stops.size() - 1:
+			if points[k] == Vector3.INF or points[k + 1] == Vector3.INF:
+				continue
+			for dir in 2:
+				var a := k if dir == 0 else k + 1
+				var b := k + 1 if dir == 0 else k
+				var id := PLATFORM_ID + platform_links.size()
+				nav.add_ride(points[a], points[b], id, TELEPORT_COST)
+				platform_links.append({"from": points[a], "to": points[b], "platform": i, "stop_from": a, "stop_to": b, "id": id})
+				count += 1
+	return count
+
+
 func describe() -> Dictionary:
 	return {"teleports": teleports.size(), "kills": kills.size(), "doors": doors.size(), "later": later.size(),
-		"gadgets": gadgets.size(), "skipped": skipped.duplicate(), "joined": joined.duplicate()}
+		"gadgets": gadgets.size(), "swings": swings.size(), "platforms": platforms.size(), "legs": platform_links.size(), "skipped": skipped.duplicate(), "joined": joined.duplicate()}
 
 
 func _read_volume(node: Object, destinations: Dictionary) -> void:
@@ -231,12 +380,20 @@ func _read_volume(node: Object, destinations: Dictionary) -> void:
 
 	if kind == "hurt":
 		var damage := float((volume.get("record") as Dictionary).get("damage", 0.0))
-		if damage >= lethal:
+		if damage >= lethal and not _scores(volume):
 			for box in _boxes(volume):
 				kills.append(_grown(box))
 		return
 
 	_add_teleport(node, destinations)
+
+
+## Whether a hurt volume is the map's finish line: it scores whoever touches it, however it kills.
+func _scores(volume: Object) -> bool:
+	for output: Dictionary in volume.get("outputs") if volume.get("outputs") != null else []:
+		if str(output.get("input", "")).to_lower() == "applyscore":
+			return true
+	return false
 
 
 func _add_teleport(node: Object, destinations: Dictionary) -> void:
@@ -272,12 +429,37 @@ func _read_door(e: Object) -> void:
 	doors.append({"index": int(e.get("index")), "box": box})
 
 
+func _read_platform(e: Object) -> void:
+	var mover: Object = e.get("mover")
+	var node: Object = e.get("node")
+	if mover == null or not node is Node3D or str(mover.get("kind")) != "path" or not bool(mover.get("solid")):
+		return
+	var half: Vector3 = e.get("hit_half")
+	var corners: Array = e.get("_corners")
+	if half.y > 0.6 or half.x < 0.5 or half.z < 0.5 or corners.size() < 2:
+		return
+	var frame: Transform3D = e.get("hit_frame")
+	var stops: Array = []
+	for c: Vector3 in corners:
+		stops.append(frame.origin + c - (corners[0] as Vector3))
+	platforms.append({"ent": e, "node": node, "stops": stops, "top": frame.origin.y + half.y, "half": half})
+
+
+func _read_swing(e: Object) -> void:
+	var mover: Object = e.get("mover")
+	var node: Object = e.get("node")
+	if mover == null or not node is Node3D or bool(mover.get("start_open")) or not bool(mover.get("solid")):
+		return
+	if str(mover.get("kind")) in ["slide", "rotate", "rotate_button"] and bool(mover.call("is_animatable")):
+		swings.append({"node": node, "mover": mover})
+
+
 ## The buttons and trigger volumes whose output chains reach a disabled teleport, found backwards from each teleport
 ## through every output that names the entity so far (an Enable, a relay, a counter, another trigger).
 func _read_gadgets(world: Object, io: Object) -> void:
 	var feeders := {}
 	for e: Object in io.get("entities"):
-		for link: Dictionary in e.get("links"):
+		for link: Dictionary in e.get("links") if e.get("links") != null else []:
 			var inp := str(link["input"]).to_lower()
 			if inp in ["disable", "turnoff", "kill", "killhierarchy"]:
 				continue
@@ -297,7 +479,7 @@ func _read_gadgets(world: Object, io: Object) -> void:
 		roots[int(volume.get("entity"))] = {"index": int(volume.get("entity")), "kind": "walk", "box": bounds, "node": node}
 	for e: Object in io.get("entities"):
 		var mover: Object = e.get("mover")
-		if mover == null or not bool(mover.get("use")) or not str(mover.get("kind")).ends_with("button"):
+		if mover == null or not bool(mover.get("use")) or str(mover.get("kind")) in ["spin", "path"]:
 			continue
 		var half: Vector3 = e.get("hit_half")
 		if half == Vector3.ZERO:

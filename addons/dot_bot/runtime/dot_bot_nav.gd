@@ -50,6 +50,8 @@ var avoid_body: float = 1.8
 var bake_ms: float = 0.0
 
 var _started: int = 0
+## The root last baked, for [method find_drops]'s clearance rays.
+var _root: Node3D = null
 var _baking: bool = false
 ## Bumped by [method clear]; a background bake started under another number is dropped.
 var _generation: int = 0
@@ -138,6 +140,7 @@ func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotRes
 		return DotResult.fail(DotError.CODE_INVALID, "nothing to bake: the map is not in the tree")
 
 	_started = Time.get_ticks_usec()
+	_root = root
 	mesh = NavigationMesh.new()
 	mesh.cell_size = CELL
 	mesh.cell_height = CELL_HEIGHT
@@ -359,6 +362,120 @@ func clear_rides() -> void:
 	_rides.clear()
 	if _map.is_valid():
 		NavigationServer3D.map_force_update(_map)
+
+
+## Adds one-way drop edges from the mesh's open borders down to lower floor, id [param first_id] up: a step off an
+## island's rim onto the floor below, which the bake leaves out because a body cannot climb back. One per
+## [param spacing] metres of rim and landing floor, at most [param limit]; returns how many were added.
+## The landing is the nearest mesh point to a probe straight out and below the rim, kept only when it lies
+## under the probe (a kill volume carved out of the bake is never a landing) and a body's column can fall
+## there: physics rays from the rim out and down must hit nothing, since the mesh also ends at every wall.
+func find_drops(first_id: int, min_drop: float = 1.2, max_drop: float = 24.0, spacing: float = 4.0, limit: int = 400, cost: float = 2.0) -> int:
+	return _find_edges(first_id, [0.9, 1.6], min_drop, max_drop, spacing, limit, cost, false)
+
+
+## Adds one-way hop edges from the mesh's rims across a gap to another island's floor (at most 0.9 m higher, any
+## depth lower), id [param first_id] up: a jump a body makes at the rim. [param max_gap] metres is what a
+## standing run-up clears. The landing must be another island, or the edge only shortens a walk.
+func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 3.0, limit: int = 400, cost: float = 3.0) -> int:
+	var reaches: Array = []
+	var gap := 2.0
+	while gap <= max_gap + 0.01:
+		reaches.append(gap)
+		gap += 0.75
+	return _find_edges(first_id, reaches, -0.9, 24.0, spacing, limit, cost, true)
+
+
+func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float, spacing: float, limit: int, cost: float, other_island: bool) -> int:
+	if not is_ready():
+		return 0
+	var vertices := mesh.get_vertices()
+	var uses := {}
+	for i in range(mesh.get_polygon_count()):
+		var polygon := mesh.get_polygon(i)
+		for k in polygon.size():
+			var a := _vertex_key(vertices[polygon[k]])
+			var b := _vertex_key(vertices[polygon[(k + 1) % polygon.size()]])
+			var key := _edge_key(a, b)
+			uses[key] = uses.get(key, 0) + 1
+	var seen := {}
+	var added := 0
+	for i in range(mesh.get_polygon_count()):
+		var polygon := mesh.get_polygon(i)
+		var centre := Vector3.ZERO
+		for index in polygon:
+			centre += vertices[index]
+		centre /= float(polygon.size())
+		for k in polygon.size():
+			var pa := vertices[polygon[k]]
+			var pb := vertices[polygon[(k + 1) % polygon.size()]]
+			var a := _vertex_key(pa)
+			var b := _vertex_key(pb)
+			var key := _edge_key(a, b)
+			if uses.get(key, 0) != 1:
+				continue
+			var along := pb - pa
+			var out := Vector3(along.z, 0.0, -along.x).normalized()
+			if out.dot(Vector3(pa.x - centre.x, 0.0, pa.z - centre.z)) < 0.0:
+				out = -out
+			var steps := maxi(1, int(along.length() / spacing))
+			for s in steps:
+				var rim := pa + along * ((float(s) + 0.5) / float(steps))
+				var found := _drop_landing(rim, out, min_drop, max_drop, reaches, island_at(rim) if other_island else -2)
+				if found == Vector3.INF:
+					continue
+				var cell := Vector4i(roundi(rim.x / spacing), roundi(rim.y), roundi(found.x / spacing), roundi(found.z / spacing))
+				var cell_key := Vector4i(cell.x, cell.y / 3, cell.z, cell.w)
+				if seen.has(cell_key):
+					continue
+				seen[cell_key] = true
+				add_ride(rim, found, first_id + added, cost)
+				added += 1
+				if added >= limit:
+					return added
+	return added
+
+
+func _clear_fall(rim: Vector3, column: Vector3, landing: Vector3) -> bool:
+	if _root == null or not is_instance_valid(_root) or not _root.is_inside_tree():
+		return true
+	var space := _root.get_world_3d().direct_space_state
+	var up := Vector3(0.0, 1.0, 0.0)
+	for leg in [[rim + up, column + up], [column + up, landing + up * 0.6], [rim + up * 0.3, column + up * 0.3]]:
+		var query := PhysicsRayQueryParameters3D.create(leg[0], leg[1])
+		if not space.intersect_ray(query).is_empty():
+			return false
+	return true
+
+
+func _drop_landing(rim: Vector3, out: Vector3, min_drop: float, max_drop: float, reaches: Array, not_island: int = -2) -> Vector3:
+	var space: PhysicsDirectSpaceState3D = null
+	if _root != null and is_instance_valid(_root) and _root.is_inside_tree():
+		space = _root.get_world_3d().direct_space_state
+	for reach: float in reaches:
+		var column: Vector3 = rim + out * reach
+		if space != null:
+			# the ground under the column, however much mesh lies nearer than it
+			if not space.intersect_ray(PhysicsRayQueryParameters3D.create(rim + Vector3(0.0, 1.0, 0.0), column + Vector3(0.0, 1.0, 0.0))).is_empty():
+				continue
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(column + Vector3(0.0, 1.0, 0.0), column + Vector3(0.0, -max_drop - 1.0, 0.0)))
+			if hit.is_empty():
+				continue
+			var ground: Vector3 = hit["position"]
+			var spot := NavigationServer3D.map_get_closest_point(_map, ground)
+			if rim.y - spot.y >= min_drop and rim.y - spot.y <= max_drop and Vector2(spot.x - ground.x, spot.z - ground.z).length() < 0.6 \
+					and absf(spot.y - ground.y) < 0.8 and (not_island == -2 or island_at(spot) != not_island):
+				return spot
+			continue
+		for depth in [min_drop + 0.3, 3.0, 6.0, 10.0, 16.0, 24.0]:
+			if depth > max_drop:
+				break
+			var probe := column + Vector3(0.0, -depth, 0.0)
+			var near := NavigationServer3D.map_get_closest_point(_map, probe)
+			if rim.y - near.y >= min_drop and rim.y - near.y <= max_drop \
+					and Vector2(near.x - column.x, near.z - column.z).length() < 0.6 and _clear_fall(rim, column, near):
+				return near
+	return Vector3.INF
 
 
 func _link(ride: Dictionary) -> void:
@@ -627,6 +744,11 @@ static func _height_in(at: Vector3, a: Vector3, b: Vector3, c: Vector3) -> float
 	if u < -0.001 or v < -0.001 or u + v > 1.001:
 		return NAN
 	return a.y + u * (c.y - a.y) + v * (b.y - a.y)
+
+
+static func _edge_key(a: Vector3i, b: Vector3i) -> String:
+	var forward := a.x < b.x or (a.x == b.x and (a.y < b.y or (a.y == b.y and a.z < b.z)))
+	return "%s|%s" % [a, b] if forward else "%s|%s" % [b, a]
 
 
 static func _vertex_key(v: Vector3) -> Vector3i:
