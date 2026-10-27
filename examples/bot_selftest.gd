@@ -14,14 +14,14 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 229
+const CHECKS := 235
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 27
+const SECTIONS := 28
 
 const TICK := 1.0 / 64.0
 
@@ -176,6 +176,7 @@ func _run() -> void:
 	_test_surf()
 	await _test_ride_edges()
 	await _test_links()
+	await _test_unlock_export()
 	await _test_kill_avoidance()
 	_test_harvest_verify()
 	await _test_harvest_store()
@@ -328,6 +329,30 @@ func _test_links() -> void:
 		"the route says where the teleport starts (inside its box) and lands", str(hop["rides"]))
 	var empty := DotBotLinks.read(null)
 	_check(empty.teleports.is_empty() and empty.kills.is_empty() and empty.doors.is_empty(), "no map, no links")
+	nav.clear()
+	made[0].queue_free()
+	_done()
+
+
+## A shot button from dot-map's export is a gadget only when a game applies the export.
+func _test_unlock_export() -> void:
+	_section("unlock export: opt-in shoot gadgets and door hints")
+	var made := await _floors([Vector3(0.0, 0.0, 0.0)], Vector3(20.0, 0.0, 6.0))
+	var nav := DotBotNav.new()
+	var baked := nav.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+	var export := {"openers": {7: {"index": 7, "kind": "shoot", "name": "job", "box": AABB(Vector3(4.0, 0.0, -1.0), Vector3(1.0, 1.0, 1.0))}},
+		"doors": [{"entity": 9, "box": AABB(Vector3(8.0, 0.0, -1.0), Vector3(0.2, 2.0, 2.0)), "opens": "output", "opened_by": [{"index": 7, "kind": "shoot", "hops": 2}]}],
+		"teleports": []}
+	var plain := DotBotLinks.read(FakeWorld.new())
+	_check(baked.ok and plain.gadgets.is_empty() and plain.next_gadget(nav, Vector3(-6.0, 0.0, 0.0), {}, true).is_empty(), "without the export nothing is added")
+	var links := DotBotLinks.read(FakeWorld.new(), {"nav_export": export})
+	_check(links.gadgets.size() == 1 and links.gadgets[0]["kind"] == "shoot" and (links.gadgets[0]["feeds"] as PackedInt32Array) == PackedInt32Array([9]),
+		"with it the shot button is a gadget that feeds the door", str(links.gadgets))
+	_check(links.unlock_doors.size() == 1 and int(links.unlock_doors[0]["entity"]) == 9, "the door keeps its opener hint")
+	var next := links.next_gadget(nav, Vector3(-6.0, 0.0, 0.0), {}, true)
+	_check(not next.is_empty() and int(next["index"]) == 7, "a blocked bot is sent to it", str(next))
+	_check(links.next_gadget(nav, Vector3(-6.0, 0.0, 0.0), {}).is_empty(), "it is not wanted for a teleport, so only the blocked pass takes it")
+	_check(links.at_gadget(links.gadgets[0], Vector3(3.0, 0.0, 0.0)) and not links.at_gadget(links.gadgets[0], Vector3(-6.0, 0.0, 0.0)), "in reach of the shot, and not far off")
 	nav.clear()
 	made[0].queue_free()
 	_done()

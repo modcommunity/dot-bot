@@ -86,12 +86,21 @@ const ENTRY_SLACK := 1.0
 ## The mesh floats this far above the floor a body stands on, so a flat volume laid in the floor lies just below it.
 const MESH_FLOAT := 0.35
 
+## Metres a shot button may be shot from: a bot with no weapon in hand is the map's own damage on it, so the reach is a
+## stand-in for a sight line, not a ranged attack.
+const SHOOT_REACH := 3.0
+
 ## Damage at or above which a hurt volume counts as a kill, and the metres a kill box is grown by.
 var lethal: float = 100.0
 var margin: float = 0.4
 
 
-## Reads [param world]'s teleports, kill volumes and touch doors. [param options]: `lethal`, `margin`.
+## Opt-in unlock hints from the map's own logic ([method apply_export]); empty until a game applies one.
+var unlock_doors: Array[Dictionary] = []
+
+
+## Reads [param world]'s teleports, kill volumes and touch doors. [param options]: `lethal`, `margin`, and `nav_export`
+## (dot-map's `DotMapNavLinks.read(world)`, which [method apply_export] takes; a game that passes none is unchanged).
 static func read(world: Object, options: Dictionary = {}) -> DotBotLinks:
 	var links := DotBotLinks.new()
 	links.lethal = float(options.get("lethal", links.lethal))
@@ -111,7 +120,48 @@ static func read(world: Object, options: Dictionary = {}) -> DotBotLinks:
 			links._read_swing(e)
 			links._read_platform(e)
 		links._read_gadgets(world, io)
+	var export: Variant = options.get("nav_export")
+	if export is Dictionary:
+		links.apply_export(export)
 	return links
+
+
+## Takes dot-map's door and teleport export (`DotMapNavLinks.read`): every opener of a closed door or a disabled
+## teleport becomes a gadget (a shot button is a new kind, `"shoot"`, fired by damaging it), with the door and
+## teleport entity indices it reaches in `feeds`. [member unlock_doors] keeps `{"entity", "box", "opened_by"}` per door
+## something opens. Plain data in, no dot-map class named.
+func apply_export(export: Dictionary) -> void:
+	var by_index := {}
+	for g in gadgets:
+		by_index[int(g["index"])] = g
+	var feeds := {}
+	var targets: Array = []
+	targets.append_array(export.get("doors", []))
+	targets.append_array(export.get("teleports", []))
+	unlock_doors.clear()
+	for t: Dictionary in targets:
+		var by: Array = t.get("opened_by", [])
+		if by.is_empty():
+			continue
+		if t.has("opens"):
+			unlock_doors.append({"entity": int(t["entity"]), "box": t["box"], "opened_by": by})
+		for o: Dictionary in by:
+			var list: Array = feeds.get(int(o["index"]), [])
+			if not list.has(int(t["entity"])):
+				list.append(int(t["entity"]))
+			feeds[int(o["index"])] = list
+	var openers: Dictionary = export.get("openers", {})
+	for index: int in feeds:
+		var feed := PackedInt32Array(feeds[index])
+		if by_index.has(index):
+			var g: Dictionary = by_index[index]
+			var merged := PackedInt32Array(g["feeds"])
+			for f in feed:
+				if not merged.has(f):
+					merged.append(f)
+			g["feeds"] = merged
+		elif openers.has(index) and str((openers[index] as Dictionary)["kind"]) == "shoot":
+			gadgets.append({"index": index, "kind": "shoot", "box": (openers[index] as Dictionary)["box"], "feeds": feed, "node": null})
 
 
 ## Cuts the kill volumes out of the next bake of [param nav], so a path ends short of one.
@@ -227,6 +277,8 @@ func next_teleport(nav: DotBotNav, feet: Vector3, taken: Dictionary) -> Dictiona
 ## within reach of a button.
 func at_gadget(gadget: Dictionary, feet: Vector3, radius: float = 0.35, height: float = 1.8) -> bool:
 	var box: AABB = gadget["box"]
+	if gadget["kind"] == "shoot":
+		return box.grow(SHOOT_REACH).has_point(feet + Vector3(0.0, 0.9, 0.0))
 	if gadget["kind"] == "use":
 		return box.grow(USE_REACH).has_point(feet + Vector3(0.0, 0.9, 0.0))
 	return box.grow(0.1).intersects(AABB(feet - Vector3(radius, 0.0, radius), Vector3(radius * 2.0, height, radius * 2.0)))
@@ -530,6 +582,8 @@ func _wanted(gadget: Dictionary) -> bool:
 ## Whether the gadget can fire now: a trigger volume that is enabled.
 func _available(gadget: Dictionary) -> bool:
 	var node: Object = gadget["node"]
+	if node == null:
+		return true
 	if gadget["kind"] == "walk":
 		return node.has_method("active") and bool(node.call("active"))
 	return not bool(node.get("locked")) and bool(node.get("alive"))
