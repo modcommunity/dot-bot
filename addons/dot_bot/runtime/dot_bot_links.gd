@@ -35,6 +35,9 @@ const TELEPORT_ID := 1000000
 const DROP_ID := 2000000
 ## Ride ids from here up are the legs of a platform ride (a train carrying a body between two stops).
 const PLATFORM_ID := 3000000
+## Shortest drop that gets an edge: below a step's climb the mesh walks it, and a drop a little over one (a pool floor
+## 1.2 m down) is a floor the bake does not join either.
+const DROP_MIN := 0.6
 ## Ride ids from here up are jumps across a gap ([method DotBotNav.find_hops]).
 const HOP_ID := 4000000
 ## Metres a platform's centre may be from a stop and count as standing there.
@@ -146,7 +149,7 @@ func join(nav: DotBotNav) -> Dictionary:
 		stats["platforms"] = _join_platforms(nav)
 	if drops and not _dropped_once:
 		_dropped_once = true
-		dropped = nav.find_drops(DROP_ID)
+		dropped = nav.find_drops(DROP_ID, DROP_MIN)
 		stats["drops"] = dropped
 		hopped = nav.find_hops(HOP_ID) if drops else 0
 		stats["hops"] = hopped

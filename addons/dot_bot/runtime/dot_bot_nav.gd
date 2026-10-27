@@ -377,7 +377,7 @@ func find_drops(first_id: int, min_drop: float = 1.2, max_drop: float = 24.0, sp
 ## Adds one-way hop edges from the mesh's rims across a gap to another island's floor (at most 0.9 m higher, any
 ## depth lower), id [param first_id] up: a jump a body makes at the rim. [param max_gap] metres is what a
 ## standing run-up clears. The landing must be another island, or the edge only shortens a walk.
-func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 3.0, limit: int = 400, cost: float = 3.0) -> int:
+func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 1.5, limit: int = 800, cost: float = 3.0) -> int:
 	var reaches: Array = []
 	var gap := 2.0
 	while gap <= max_gap + 0.01:
@@ -425,7 +425,8 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 				if found == Vector3.INF:
 					continue
 				var cell := Vector4i(roundi(rim.x / spacing), roundi(rim.y), roundi(found.x / spacing), roundi(found.z / spacing))
-				var cell_key := Vector4i(cell.x, cell.y / 3, cell.z, cell.w)
+				# per pair of islands: two floors a metre apart under one rim must not shadow each other
+				var cell_key := [cell.x, cell.y / 3, cell.z, cell.w, island_at(rim), island_at(found)]
 				if seen.has(cell_key):
 					continue
 				seen[cell_key] = true
