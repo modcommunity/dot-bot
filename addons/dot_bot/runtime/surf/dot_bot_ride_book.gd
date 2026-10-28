@@ -3,11 +3,7 @@ extends RefCounted
 
 ## The rides known per edge on one map version: verified recordings and offline-searched seeds, ranked by measured success.
 ##
-## An edge's rides are entries [code]{id, source, score, data}[/code]. A recording's [code]data[/code]
-## is [code]{actions, action_size, hold}[/code] (its commands, held [code]hold[/code] ticks each); a seed's is whatever the
-## host keeps, such as a pilot cache. Below [member DotBotRideConfig.target] verified recordings
-## an edge ranks by score and a recording wins a tie; at the target every recording ranks above every seed.
-## A new map version drops everything: rides are only good on the geometry they were found on.
+## Rides are entries [code]{id, source, score, data}[/code]. Below [member DotBotRideConfig.target] recordings an edge ranks by score; at it every recording outranks every seed. A new map version drops all.
 
 const CHANNEL := "bot.ride.book"
 const RECORDED := "recorded"

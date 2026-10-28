@@ -3,8 +3,7 @@ extends RefCounted
 
 ## Drives a game's bots for a stretch of simulated time, samples what goes wrong, and fails with reasons.
 ##
-## The host sets callables, then calls [method advance] each tick (or awaits [method run]) and
-## reads [method finish]. A watch with the [code]DotSpawnWatch[/code] methods is optional.
+## The host sets callables, then calls [method advance] each tick (or awaits [method run]) and reads [method finish]; a [code]DotSpawnWatch[/code]-shaped watch is optional.
 
 const CHANNEL := "bot"
 const SCHEMA := 1

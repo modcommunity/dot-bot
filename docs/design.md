@@ -76,3 +76,30 @@ game-hide-n-seek's `examples/headless_bots` holds the result to bands over whole
 ## Links from a map's own entities
 
 `DotBotLinks.read(world)` takes a built map world (dot-map's, by duck typing) and returns plain data: the teleports a runner can fire now, the hurt volumes that kill, and the movers that open by touch. `carve(nav)` puts the kill boxes into `DotBotNav.avoid` before a bake, so a path ends short of them instead of through them. `join(nav)` adds each teleport as an edge with an id at or above `TELEPORT_ID`, so a path crosses it and nothing is ridden. A volume that is disabled, filtered or not for clients is counted in `skipped` and left out; a teleport a button or trigger enables later is kept in `later`, and the buttons and triggers that lead to it (found by walking the output links backwards) in `gadgets`. `next_gadget` / `next_teleport` name the next errand, `refresh` joins a teleport once its entity is live, and a teleport box that lies off the mesh is joined through the floor above or below it (`off_mesh`). Walking to a gadget, holding there and firing it is the runner's job (mg-wipeout's `WoIoBot`). `doors_touched` names the touch doors a body overlaps so the caller can fire them.
+
+## DotBotLinks usage
+
+```gdscript
+var links := DotBotLinks.read(map_world)
+links.carve(nav)                          # before the bake: kill volumes are cut out
+nav.bake_in_background(root, agent, 0, statics)
+# once nav.is_ready():
+links.join(nav)                           # teleports become one-way edges
+# every so often: links.refresh(nav)      # teleports a button has enabled since
+var g := links.next_gadget(nav, feet, done)  # a button or trigger to go and press first
+for index in links.doors_touched(feet, 0.35, 1.8):  # each step: doors a body is walking into
+    map_world.io.touch(index, body)
+```
+
+A teleport is added with `DotBotNav.add_ride` so a path crosses it, but nothing is ridden: the bot stands in the box and the map moves it. A volume that is disabled, filtered or not for clients is left out (and counted); one a button enables later is not known, so the path stops short of it.
+
+## DotBotNav usage
+
+```gdscript
+var nav := DotBotNav.new()
+var baked := nav.bake(map_node, {"radius": 0.35, "height": 0.9, "climb": 0.42})
+var path := nav.path(bot_feet, goal)          # PackedVector3Array, empty when unreachable
+var spot := nav.random_point(stream)
+```
+
+The family's maps are built in code, so the mesh is baked from the static colliders with the engine's `NavigationServer3D` on the spot, on a map of its own so a game's navigation is never disturbed. `random_point` weights the mesh's polygons by area so a seeded game picks the same hiding spots every run.

@@ -3,14 +3,7 @@ extends RefCounted
 
 ## Turns recorded ride episodes into verified ones: replays each on the host's simulator from its start and keeps it only if it lands where the player did.
 ##
-## [b]The host is duck typed[/b] (nothing here names a game or the motor): [code]replay_start(episode) -> state[/code]
-## or null, [code]replay_command(sim, action: PackedFloat32Array, state) -> command[/code], and
-## [code]landing(state, event: int, episode) -> int[/code] ([constant LANDED], [constant FAILED] or [constant GOING]).
-## [code]perturb(state, rng, metres, speed) -> state[/code] is optional; without it a kept ride scores 1.
-## The simulator has [code]step(state, command) -> int[/code] (non-zero ends the ride) and [code]delta[/code].
-##
-## A ride is kept when the unperturbed replay lands and its score, the share of
-## [member DotBotRideConfig.starts] perturbed starts that land, reaches [member DotBotRideConfig.min_score].
+## The host is duck typed: [code]replay_start[/code], [code]replay_command[/code], [code]landing[/code] and optionally [code]perturb[/code]; the simulator has [code]step[/code] and [code]delta[/code]. A ride is kept when the replay lands and enough perturbed starts ([member DotBotRideConfig.min_score]) do too.
 
 const CHANNEL := "bot.ride.harvest"
 

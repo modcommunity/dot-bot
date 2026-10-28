@@ -1,33 +1,9 @@
 class_name DotBotNav
 extends RefCounted
 
-## Where a bot can walk: a navigation mesh baked from a map's colliders, and paths across it.
+## Where a bot can walk: a navigation mesh baked from a map's static colliders, and paths across it.
 ##
-## [b]Optional.[/b] The brain walks straight at waypoints and hops when stuck, which is enough on
-## an arena's open floor. A hiding game is all interiors, stairs, crawl spaces and doors, and a
-## bot that walks straight at a cupboard upstairs walks into the wall under it. A game whose maps
-## have no graph of their own bakes one here when a map is built and asks it for paths.
-##
-## [b]Baked from what collides, after the map is built.[/b] The family's maps are built in code
-## from documents, so there is nothing to bake in the editor; this parses the static colliders
-## (what a body would stand on and walk into) with the engine's own [NavigationServer3D] and
-## bakes on the spot. [b]Pass the bodies that never move[/b] (`bodies`), not the whole map: a
-## door is a static body too, and a door baked shut is a doorway the mesh does not go through,
-## so a bot never walks to it to open it.
-##
-## [b]Its own navigation map.[/b] Not the world's default one, so a game's own navigation (or a
-## second server in the same process) is never disturbed, and [method clear] frees all of it.
-##
-## [b]Deterministic where it matters.[/b] [method random_point] draws from the caller's
-## [DotRandomStream] over the mesh's polygons weighted by area, never the engine's own random
-## point, so a seeded game picks the same hiding spots on every run.
-##
-## [codeblock]
-## var nav := DotBotNav.new()
-## var baked := nav.bake(map_node, {"radius": 0.35, "height": 0.9, "climb": 0.42})
-## var path := nav.path(bot_feet, goal)          # PackedVector3Array, empty when unreachable
-## var spot := nav.random_point(stream)
-## [/codeblock]
+## Optional: the brain walks straight at waypoints otherwise. Pass only bodies that never move (a door baked shut is a wall). It owns its navigation map, so [method clear] frees all of it, and [method random_point] draws from the caller's [DotRandomStream]. Usage: docs/design.md.
 
 const CHANNEL := "dot.bot.nav"
 
@@ -88,19 +64,8 @@ func bake(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = [
 	return _take_in()
 
 
-## [method bake], with the bake itself on a worker thread: the colliders are parsed now (that
-## has to be the main thread, and is milliseconds), the mesh is built off it, and it is taken in
-## on the main thread when it is done, which calls [param done] with [method bake]'s result.
-## Until then [method path] answers empty and [method is_baking] is true. Returns a failure
-## only when there is nothing to bake; otherwise success, with the result still to come.
-##
-## [b]For a map too big to bake inside a tick.[/b] game-arena's imported surf maps are twenty
-## to fifty thousand collision vertices and took two to three seconds to bake against a map
-## change of a tenth of one: on a server that is every player's game stopping at the change.
-## The price is [method bake]'s determinism: when the mesh arrives depends on the machine, so a
-## game that replays a seeded round from its paths must use [method bake]. Without threads
-## ([method DotPlatform.has_threads]) this is [method bake], and [param done] is called before
-## it returns.
+## [method bake] with the mesh built on a worker thread, for a map too big to bake inside a tick: [param done] gets [method bake]'s result when it arrives; until then [method path] is empty and [method is_baking] true.
+## When the mesh arrives depends on the machine, so a game replaying a seeded round must use [method bake]. Without threads this is [method bake].
 func bake_in_background(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = [], done: Callable = Callable()) -> DotResult:
 	var parsed := _parse(root, agent, mask, bodies)
 	if not parsed.ok:
@@ -330,15 +295,8 @@ func _index_areas() -> void:
 ## How far a ride edge's ends may be from the mesh and still join it, metres.
 const LINK_RADIUS := 1.5
 
-## Adds a one-way edge from [param from] to [param to] that is not walked but ridden (a surf ramp
-## from one platform to another, a drop), under [param id]. [method route] goes over it when it is
-## the cheaper way and says where; the game rides it. [param cost] multiplies its length the way a
-## walked metre counts. Kept across a re-bake; [method clear_rides] drops them.
-##
-## [b]A navigation link, because the mesh cannot hold a ramp.[/b] A face steeper than the slope
-## limit is never ground, so the bake leaves every surf ramp out and a combat surf map is islands:
-## a walked route to the far side ends at the edge of this one. A link joins two islands in the
-## navigation server's own search, so the cheapest way is still one query.
+## Adds a one-way edge from [param from] to [param to] that is ridden, not walked (a surf ramp, a drop), under [param id]; [method route] crosses it when cheaper and says where. [param cost] scales its length. Kept across a re-bake; [method clear_rides] drops them.
+## It is a navigation link because the bake leaves out faces steeper than the slope limit, so surf maps are islands.
 func add_ride(from: Vector3, to: Vector3, id: int, cost: float = 1.0) -> void:
 	var ride := {"id": id, "from": from, "to": to, "cost": cost, "rid": RID()}
 	_rides.append(ride)
@@ -364,12 +322,8 @@ func clear_rides() -> void:
 		NavigationServer3D.map_force_update(_map)
 
 
-## Adds one-way drop edges from the mesh's open borders down to lower floor, id [param first_id] up: a step off an
-## island's rim onto the floor below, which the bake leaves out because a body cannot climb back. One per
-## [param spacing] metres of rim and landing floor, at most [param limit]; returns how many were added.
-## The landing is the nearest mesh point to a probe straight out and below the rim, kept only when it lies
-## under the probe (a kill volume carved out of the bake is never a landing) and a body's column can fall
-## there: physics rays from the rim out and down must hit nothing, since the mesh also ends at every wall.
+## Adds one-way drop edges from the mesh's open borders down to lower floor, id [param first_id] up, one per [param spacing] metres of rim, at most [param limit]; returns how many.
+## A landing is the nearest mesh point below the rim, kept only when it lies under the probe and physics rays out and down hit nothing.
 func find_drops(first_id: int, min_drop: float = 1.2, max_drop: float = 24.0, spacing: float = 4.0, limit: int = 400, cost: float = 2.0) -> int:
 	return _find_edges(first_id, [0.9, 1.6], min_drop, max_drop, spacing, limit, cost, false)
 
@@ -627,12 +581,8 @@ func on_island(index: int, at: Vector3, reach: float = 0.5) -> bool:
 	return false
 
 
-## Whether a walk (over ride edges too) from [param from] to [param to] can exist, answered from
-## the mesh's islands without a path query: the navigation server prints an error for every query
-## between disconnected islands, so a game that filters places by [method path_length] fills its
-## log. Both points are snapped to the mesh. True before the mesh is baked, so a caller can
-## filter unconditionally. A game with its own idea of "reachable" (a door it can open) passes
-## its own Callable to [method DotBotHiding.choose] instead.
+## Whether a walk (over ride edges too) from [param from] to [param to] can exist, answered from the islands without a path query (the server logs an error per query between islands). True before the bake.
+## A game with its own idea of "reachable" passes a Callable to [method DotBotHiding.choose] instead.
 func joined(from: Vector3, to: Vector3) -> bool:
 	if mesh == null:
 		return true

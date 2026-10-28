@@ -13,7 +13,7 @@ addons/dot_bot/runtime/dot_bot_brain.gd::banner	4
 addons/dot_bot/runtime/dot_bot_brain.gd::long_block	1
 addons/dot_bot/runtime/dot_bot_hiding.gd::long_block	2
 addons/dot_bot/runtime/dot_bot_nav.gd::banner	2
-addons/dot_bot/runtime/dot_bot_nav.gd::long_block	6
+addons/dot_bot/runtime/dot_bot_nav.gd::long_block	3
 addons/dot_bot/runtime/dot_bot_roster.gd::long_block	2
 addons/dot_bot/runtime/dot_bot_search.gd::long_block	1
 addons/dot_bot/runtime/dot_bot_world.gd::long_block	3
@@ -24,5 +24,3 @@ addons/dot_bot/runtime/surf/dot_bot_surf_pilot.gd::history	3
 addons/dot_bot/runtime/surf/dot_bot_surf_pilot.gd::long_block	7
 addons/dot_bot/runtime/surf/dot_bot_surf_planner.gd::long_block	3
 addons/dot_bot/runtime/surf/dot_bot_surf_ride.gd::long_block	3
-examples/bot_selftest.gd::banner	9
-examples/bot_selftest.gd::long_block	4

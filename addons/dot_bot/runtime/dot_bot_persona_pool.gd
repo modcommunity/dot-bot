@@ -3,10 +3,7 @@ extends RefCounted
 
 ## The personas a server draws from, and who got which.
 ##
-## [b]Weighted, with a per-server override.[/b] Each persona's `weight` is its chance; an
-## operator's override (`id:weight,id:weight`, see [method parse_override]) replaces those
-## weights and drops every persona it does not name, so a server can run only medics. With
-## no personas at all the pool holds one balanced character, never nothing.
+## Each `weight` is a chance; an operator override (`id:weight,...`, [method parse_override]) replaces the weights and drops personas it does not name. With none at all the pool holds one balanced character.
 
 const CHANNEL := "dot.bot"
 

@@ -2,13 +2,9 @@
 class_name DotBotPersona
 extends RefCounted
 
-## One kind of bot character: how often it picks each behaviour when nothing is in front of it,
-## how likely a server is to give it to a bot, and how well it shoots.
+## One kind of bot character: how often it picks each behaviour with nothing in front of it, how likely a server is to give it out, and how well it shoots.
 ##
-## [b]Idle is never a behaviour.[/b] A bot with nothing to shoot used to stand at its post; now
-## it picks the next of [constant BEHAVIOURS] from this mix, so a lobby of eight is eight bots
-## doing different things. The data is a profile (kind `bot`, [method schema]), so it can be
-## added, edited and deleted live in dot-workbench without this addon naming dot-profile.
+## Idle is never a behaviour: the next of [constant BEHAVIOURS] is drawn from this mix. The data is a profile (kind `bot`, [method schema]), editable live in dot-workbench.
 
 const KIND := "bot"
 const HUNT := &"hunt"

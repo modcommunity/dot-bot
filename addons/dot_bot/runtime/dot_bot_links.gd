@@ -1,31 +1,9 @@
 class_name DotBotLinks
 extends RefCounted
 
-## What a converted map's own entities add to [DotBotNav]: teleports the mesh can use, kill volumes it
-## must keep clear of, and touch doors a body opens by walking into them.
+## What a converted map's own entities add to [DotBotNav]: teleports the mesh can use, kill volumes it must keep clear of, and touch doors a body opens by walking into them.
 ##
-## [b]Read from the map, never written in a game.[/b] [method read] takes a built map world by duck
-## typing (dot-map's `DotMapWorld`: `volumes.nodes` and `io.entities`, `io.destinations`), so this
-## names no other addon and a game with imported maps gets all three from one call. The facts are
-## plain data afterwards (the arrays below), which is also what the suite feeds it.
-##
-## [codeblock]
-## var links := DotBotLinks.read(map_world)
-## links.carve(nav)                          # before the bake: kill volumes are cut out
-## nav.bake_in_background(root, agent, 0, statics)
-## # once nav.is_ready():
-## links.join(nav)                           # teleports become one-way edges
-## # every so often: links.refresh(nav)      # teleports a button has enabled since
-## var g := links.next_gadget(nav, feet, done)  # a button or trigger to go and press first
-## for index in links.doors_touched(feet, 0.35, 1.8):  # each step: doors a body is walking into
-##     map_world.io.touch(index, body)
-## [/codeblock]
-##
-## [b]A teleport is an edge, not a ride.[/b] It is added with [method DotBotNav.add_ride] so a path
-## crosses it, but its id is at or above [constant TELEPORT_ID]: nothing is ridden, the bot stands in the
-## box and the map moves it. [b]Only what a runner can fire now.[/b] A volume that is disabled, filtered
-## or not for clients is left out (and counted), because a path through it would end at a box that does
-## nothing; one a button enables later is not known here, so the path stops short of it.
+## [method read] takes a built map world by duck typing (dot-map's `DotMapWorld`), so no other addon is named. A teleport is an edge (id at or above [constant TELEPORT_ID]), not a ride; only what a runner can fire now is used. Usage: docs/design.md.
 
 const CHANNEL := "dot.bot.links"
 
@@ -126,10 +104,8 @@ static func read(world: Object, options: Dictionary = {}) -> DotBotLinks:
 	return links
 
 
-## Takes dot-map's door and teleport export (`DotMapNavLinks.read`): every opener of a closed door or a disabled
-## teleport becomes a gadget (a shot button is a new kind, `"shoot"`, fired by damaging it), with the door and
-## teleport entity indices it reaches in `feeds`. [member unlock_doors] keeps `{"entity", "box", "opened_by"}` per door
-## something opens. Plain data in, no dot-map class named.
+## Takes dot-map's door and teleport export (`DotMapNavLinks.read`): every opener of a closed door or disabled teleport becomes a gadget (a shot button is kind `"shoot"`) with the entities it reaches in `feeds`.
+## [member unlock_doors] keeps `{"entity", "box", "opened_by"}` per openable door. Plain data in.
 func apply_export(export: Dictionary) -> void:
 	var by_index := {}
 	for g in gadgets:
@@ -222,10 +198,8 @@ func refresh(nav: DotBotNav, destinations: Dictionary) -> int:
 	return fresh
 
 
-## The nearest gadget in [param gadgets] not in [param done] (entity index to anything) whose teleport is still
-## disabled (with [param any], every gadget: for a bot held up by a door some button opens), within [param within] metres of
-## walking from [param feet] on [param nav]: the gadget with `"at"` (the mesh point to walk to)
-## and `"metres"` added, or an empty dictionary.
+## The nearest gadget not in [param done] whose teleport is still disabled ([param any]: every gadget), within [param within] metres of walking from [param feet];
+## it gains `"at"` (the mesh point) and `"metres"`, or an empty dictionary.
 func next_gadget(nav: DotBotNav, feet: Vector3, done: Dictionary, any: bool = false, within: float = 60.0) -> Dictionary:
 	var best := {}
 	var best_metres := within
@@ -294,10 +268,7 @@ func doors_touched(feet: Vector3, radius: float, height: float) -> PackedInt32Ar
 	return out
 
 
-## Poses every door and slide open (its fully travelled pose), returning what [method restore] needs. Call just
-## before a bake and restore right after: [b]the bake parses on the calling tick[/b], so the map never shows it.
-## A door baked shut is a wall on the mesh and the way through it is never walked to; baked open, the path goes
-## through and the bot touches or opens it on arrival.
+## Poses every door and slide open, returning what [method restore] needs; call just before a bake and restore right after (the bake parses on the calling tick). A door baked shut is a wall.
 func pose_open() -> Array[Dictionary]:
 	var undo: Array[Dictionary] = []
 	for swing in swings:

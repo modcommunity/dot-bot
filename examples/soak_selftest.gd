@@ -1,10 +1,6 @@
 extends Node
 
-## Proves DotBotSoak's detectors and report against a trivial arena of fake movers.
-##
-## [codeblock]
-## godot --headless --path . res://examples/soak_selftest.tscn
-## [/codeblock]
+## Proves DotBotSoak's detectors and report against a trivial arena of fake movers: `godot --headless --path . res://examples/soak_selftest.tscn`.
 
 const CHECKS := 45
 const SECTIONS := 8
