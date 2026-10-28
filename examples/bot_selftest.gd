@@ -14,14 +14,14 @@ extends Node
 ## change to the brain that moves a preset out of its band fails here before a player says the
 ## bots are too hard.
 
-const CHECKS := 243
+const CHECKS := 264
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 29
+const SECTIONS := 30
 
 const TICK := 1.0 / 64.0
 
@@ -184,6 +184,7 @@ func _run() -> void:
 	await _test_ride_book_store()
 	_test_ride_pick()
 	_test_aim_solver()
+	_test_humanisation()
 
 	print("")
 	print("%d passed, %d failed" % [_passed, _failed])
@@ -1247,6 +1248,197 @@ func _test_aim_solver() -> void:
 
 
 # --- Harness --------------------------------------------------------------------------
+
+const HUMAN := ["react_jitter", "overshoot", "track_lag", "strafe_jitter", "glance", "hesitate", "hurt_delay"]
+
+
+## Medium with the aim error out of the way, and the humanisation on or all the way off.
+func _human_settings(on: bool, overrides: Dictionary = {}) -> DotBotSettings:
+	var s := DotBotSettings.new()
+	s.set_difficulty("medium")
+	var p := s.profile
+	p.aim_error = 0.0
+	p.aim_floor = 0.0
+	p.flinch = 0.0
+	if not on:
+		for f in HUMAN:
+			p.set(StringName(f), 0.0)
+	for key in overrides:
+		p.set(StringName(key), overrides[key])
+	return s
+
+
+func _stdev(values: Array[float]) -> float:
+	var m := _mean(values)
+	var acc := 0.0
+	for v in values:
+		acc += (v - m) * (v - m)
+	return sqrt(acc / maxf(float(values.size()), 1.0))
+
+
+func _test_humanisation() -> void:
+	_section("humanisation: each cvar changes the behaviour and 0 restores the plain one")
+
+	var fields := DotBotProfile.fields()
+	for f in HUMAN:
+		_check(fields.has(f) and DotBotProfile.preset_value("medium", f) > 0.0, "bot_%s is a setting, on in medium" % f)
+	var cs := DotBotSettings.new()
+	_check(cs.set_value("glance", "0").ok and cs.profile.glance == 0.0 and cs.is_overridden("glance"), "bot_glance 0 is an override that turns it off")
+
+	# Reaction: spread of the time to first shot.
+	var spread := {}
+	var minimum := {}
+	for on in [false, true]:
+		var times: Array[float] = []
+		for trial in range(60):
+			var sc := _scene(Vector3(0.0, 0.0, -15.0))
+			var brain := DotBotBrain.new(2000 + trial, _human_settings(on))
+			_run_bot(brain, sc[0], sc[2], 3.0)
+			var e := brain.engagement()
+			times.append(float(e["first_shot_at"]) - float(e["seen_at"]))
+		spread[on] = _stdev(times)
+		minimum[on] = times.min()
+		print("       reaction jitter %s: stdev %.3f s, fastest %.3f s" % ["on" if on else "off", spread[on], minimum[on]])
+	_check(spread[true] > spread[false] * 1.5, "reaction time varies more with bot_react_jitter on", "%.3f vs %.3f" % [spread[true], spread[false]])
+	_check(minimum[true] >= 0.3 * 0.85 - 0.02 and minimum[false] >= 0.3 * 0.85 - 0.02, "jitter never makes it faster than the plain reaction")
+
+	# Overshoot: a flick onto a target 70 degrees off swings past it only with the setting.
+	var swing := {}
+	for on in [false, true]:
+		var worst := 0.0
+		for trial in range(8):
+			var sc := _scene(Vector3(-sin(deg_to_rad(70.0)), 0.0, -cos(deg_to_rad(70.0))) * 12.0)
+			var s := _human_settings(on)
+			s.profile.turn_rate = 900.0
+			s.profile.turn_smooth = 0.9
+			s.profile.reaction = 0.05
+			var brain := DotBotBrain.new(3000 + trial, s)
+			var target_yaw := DotBotAim.angles_to((sc[0] as DotBotContact).eye(), (sc[1] as DotBotContact).aim_point()).x
+			for intent: DotBotIntent in _run_bot(brain, sc[0], sc[2], 1.5):
+				worst = maxf(worst, intent.yaw - target_yaw if target_yaw > 0.0 else target_yaw - intent.yaw)
+		swing[on] = worst
+		print("       overshoot %s: view passes the target by %.2f deg" % ["on" if on else "off", worst])
+	_check(swing[false] < 0.5, "no overshoot with bot_overshoot 0", "%.2f" % swing[false])
+	_check(swing[true] > 0.8, "the view swings past the target with bot_overshoot on", "%.2f" % swing[true])
+
+	# Tracking lag: a target that reverses is followed late, a steady one is not.
+	var trail := {}
+	for lag in [0.0, 0.15]:
+		var sc := _scene(Vector3(-6.0, 0.0, -15.0))
+		var enemy: DotBotContact = sc[1]
+		var s := _human_settings(false, {"track_lag": lag, "prediction": 1.0, "turn_smooth": 1.0, "turn_rate": 1500.0})
+		var brain := DotBotBrain.new(4000, s)
+		var worst := 0.0
+		var x := -6.0
+		var t := 0.0
+		while t < 1.6:
+			enemy.velocity = Vector3(8.0 if t < 0.8 else -8.0, 0.0, 0.0)
+			x += enemy.velocity.x * TICK
+			enemy.position.x = x
+			var intent := brain.think(sc[0], sc[2], t)
+			(sc[0] as DotBotContact).view_yaw = intent.yaw
+			(sc[0] as DotBotContact).view_pitch = intent.pitch
+			if t > 0.8 and t < 1.3:
+				worst = maxf(worst, rad_to_deg(intent.forward().angle_to(enemy.aim_point() - (sc[0] as DotBotContact).eye())))
+			t += TICK
+		trail[lag] = worst
+	print("       error after a reversal: lag 0 %.2f deg, lag 0.15 %.2f deg" % [trail[0.0], trail[0.15]])
+	_check(trail[0.15] > trail[0.0] + 1.0, "the view is late on a reversal with bot_track_lag", "%.2f vs %.2f" % [trail[0.15], trail[0.0]])
+
+	# Strafing: lengths vary more, and a change of direction eases through zero.
+	var cv := {}
+	var eased := {}
+	for on in [false, true]:
+		var sc := _scene(Vector3(0.0, 0.0, -10.0))
+		var s := _human_settings(on, {"strafe": 1.0, "hesitate": 0.0, "stop_to_shoot": 0.0, "crouch": 0.0})
+		var brain := DotBotBrain.new(5000, s)
+		var lengths: Array[float] = []
+		var run_sign := 0
+		var run_start := 0.0
+		var mid := 0
+		var t := 0.0
+		while t < 90.0:
+			var intent := brain.think(sc[0], sc[2], t)
+			(sc[0] as DotBotContact).view_yaw = intent.yaw
+			(sc[0] as DotBotContact).view_pitch = intent.pitch
+			if t > 2.0:
+				var x := intent.move.x
+				if absf(x) > 0.1 and absf(x) < 0.9:
+					mid += 1
+				var sg := 0 if absf(x) < 0.3 else (1 if x > 0.0 else -1)
+				if sg != run_sign:
+					if run_sign != 0 or t - run_start > 0.0:
+						lengths.append(t - run_start)
+					run_sign = sg
+					run_start = t
+			t += TICK
+		cv[on] = _stdev(lengths) / maxf(_mean(lengths), 0.001)
+		eased[on] = mid
+		print("       strafe %s: %d segments, length variation %.2f, %d eased ticks" % ["on" if on else "off", lengths.size(), cv[on], mid])
+	_check(cv[true] > cv[false] * 1.25, "strafe segment lengths vary more with bot_strafe_jitter", "%.2f vs %.2f" % [cv[true], cv[false]])
+	_check(eased[false] < 20 and eased[true] > 100, "strafe direction eases only with the setting", "%d vs %d" % [eased[false], eased[true]])
+
+	# Glance: a roaming bot looks well off its heading, and holds it.
+	var turned := {}
+	for on in [false, true]:
+		var sc := _scene(Vector3(0.0, 0.0, -10.0))
+		(sc[1] as DotBotContact).alive = false
+		(sc[2] as DotBotWorld).waypoints_fn = func() -> PackedVector3Array: return PackedVector3Array([Vector3(0.0, 0.0, -200.0)])
+		var brain := DotBotBrain.new(6000, _human_settings(on))
+		var widest := 0.0
+		var held := 0
+		for intent: DotBotIntent in _run_bot(brain, sc[0], sc[2], 30.0):
+			widest = maxf(widest, absf(intent.yaw))
+			if absf(intent.yaw) > 45.0:
+				held += 1
+		turned[on] = widest
+		print("       glance %s: widest look %.1f deg, %d ticks past 45 deg" % ["on" if on else "off", widest, held])
+	_check(turned[false] < 35.0, "a roaming bot only sways 25 degrees with bot_glance 0", "%.1f" % turned[false])
+	_check(turned[true] > 50.0, "a roaming bot turns its head well aside with bot_glance on", "%.1f" % turned[true])
+
+	# Hesitation: the time from sighting to the first step.
+	var wait := {}
+	for on in [false, true]:
+		var delays: Array[float] = []
+		for trial in range(20):
+			var sc := _scene(Vector3(0.0, 0.0, -25.0))
+			var brain := DotBotBrain.new(7000 + trial, _human_settings(on))
+			var t := 0.0
+			var started := -1.0
+			while t < 2.0 and started < 0.0:
+				var intent := brain.think(sc[0], sc[2], t)
+				if intent.move.length() > 0.1:
+					started = t
+				t += TICK
+			delays.append(started)
+		wait[on] = _mean(delays)
+		print("       hesitation %s: first step %.3f s after the sighting" % ["on" if on else "off", wait[on]])
+	_check(wait[false] < 0.05, "it moves at once with bot_hesitate 0", "%.3f" % wait[false])
+	_check(wait[true] > 0.05 and wait[true] <= 0.25, "it stands a moment first with bot_hesitate on", "%.3f" % wait[true])
+
+	# Hurt delay: the turn toward a shooter.
+	var lag_turn := {}
+	for on in [false, true]:
+		var delays: Array[float] = []
+		for trial in range(20):
+			var sc := _scene(Vector3(0.0, 0.0, -10.0))
+			(sc[1] as DotBotContact).alive = false
+			var brain := DotBotBrain.new(8000 + trial, _human_settings(on))
+			brain.think(sc[0], sc[2], 0.0)
+			brain.hurt(Vector3(0.0, 0.0, 8.0), 0.1)
+			var t := 0.1
+			var found := -1.0
+			while t < 1.5 and found < 0.0:
+				if brain.think(sc[0], sc[2], t).state == &"listen":
+					found = t - 0.1
+				t += TICK
+			delays.append(found)
+		lag_turn[on] = _mean(delays)
+		print("       hurt delay %s: turns %.3f s after the hit" % ["on" if on else "off", lag_turn[on]])
+	_check(lag_turn[false] < 0.03, "it turns at once with bot_hurt_delay 0", "%.3f" % lag_turn[false])
+	_check(lag_turn[true] > 0.07 and lag_turn[true] < 0.35, "it turns after a beat with bot_hurt_delay on", "%.3f" % lag_turn[true])
+	_done()
+
 
 func _section(title: String) -> void:
 	_entered += 1

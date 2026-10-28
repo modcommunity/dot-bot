@@ -68,6 +68,14 @@ const SPEC := [
 	["crouch", 0.0, 1.0, 0.0, 0.1, 0.25, 0.3, "Chance per engagement of crouching for long-range fire."],
 	["jump", 0.0, 2.0, 0.0, 0.05, 0.15, 0.2, "Jumps per second while fighting up close."],
 	["map_knowledge", 0.0, 1.0, 0.1, 0.4, 0.7, 1.0, "Chance a roaming bot heads where it last knew of an enemy instead of anywhere."],
+	# Humanisation: every one is 0 for the old, exact behaviour.
+	["react_jitter", 0.0, 2.0, 0.5, 0.3, 0.3, 0.25, "How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way)."],
+	["overshoot", 0.0, 1.0, 0.6, 0.4, 0.4, 0.3, "How far a fast turn onto a target swings past it before coming back (0 is none)."],
+	["track_lag", 0.0, 0.5, 0.12, 0.05, 0.04, 0.03, "Seconds the bot takes to notice a target changed direction (it aims with the old velocity meanwhile)."],
+	["strafe_jitter", 0.0, 1.0, 0.6, 0.6, 0.5, 0.4, "How irregular strafing is: uneven lengths, pauses, easing into a change of direction (0 is a metronome)."],
+	["glance", 0.0, 1.0, 0.8, 0.6, 0.5, 0.4, "How often a roaming bot turns its head to look aside and holds the look (0 never)."],
+	["hesitate", 0.0, 2.0, 0.35, 0.2, 0.12, 0.06, "Seconds a bot may stand still when it first sights somebody before it starts moving."],
+	["hurt_delay", 0.0, 1.0, 0.25, 0.15, 0.1, 0.06, "Seconds before a bot that was hit turns toward the shooter (0 is instant)."],
 ]
 
 ## SPEC's columns.
@@ -116,6 +124,15 @@ const COL_HELP := 7
 @export var crouch: float = 0.1
 @export var jump: float = 0.05
 @export var map_knowledge: float = 0.4
+
+@export_group("Humanisation")
+@export var react_jitter: float = 0.3
+@export var overshoot: float = 0.4
+@export var track_lag: float = 0.05
+@export var strafe_jitter: float = 0.6
+@export var glance: float = 0.6
+@export var hesitate: float = 0.2
+@export var hurt_delay: float = 0.15
 
 
 ## A profile set to [param name]'s column, or null for a name that is not a preset.

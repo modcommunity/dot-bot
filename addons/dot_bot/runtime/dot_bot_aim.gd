@@ -25,6 +25,9 @@ extends RefCounted
 
 # No log channel: arithmetic over the settings. The brain logs decisions.
 
+## Seconds of a target's velocity error that bot_track_lag turns into aim error.
+const LAG_REACH := 0.15
+
 ## Seconds a bot with no prediction trails a moving target by: about how far behind a person
 ## tracking by eye is. bot_prediction takes it to nothing.
 const TRACK_LAG := 0.08
@@ -64,6 +67,9 @@ var first_shot_error: float = NAN
 var _err_mag0: float = 0.0
 var _err_angle: float = 0.0
 var _err_spin: float = 1.0
+var _over: Vector2 = Vector2.ZERO
+var _vel_est: Vector3 = Vector3.INF
+var _prev_gap: float = 0.0
 var _flinch: float = 0.0
 var _want: Vector2 = Vector2(NAN, NAN)
 var _want_prev: Vector2 = Vector2(NAN, NAN)
@@ -105,6 +111,10 @@ func engage(id: int, eye: Vector3, point: Vector3, now: float) -> bool:
 		react_at = now + p.reaction * jitter * 0.5
 		return false
 
+	if p.react_jitter > 0.0:
+		# Skewed, never faster: most sightings are quick, now and then one is slow (looking elsewhere).
+		var u := _rng.next_unit()
+		jitter *= 1.0 + p.react_jitter * 1.2 * u * u
 	react_at = now + p.reaction * jitter + p.notice * clampf(off / 90.0, 0.0, 2.0)
 	engaged_at = now
 	seen_at = now
@@ -114,12 +124,16 @@ func engage(id: int, eye: Vector3, point: Vector3, now: float) -> bool:
 	_err_angle = _rng.next_unit() * TAU
 	_err_spin = (0.6 + _rng.next_unit()) * (1.0 if _rng.next_unit() < 0.5 else -1.0)
 	_want_prev = Vector2(NAN, NAN)
+	_over = Vector2.ZERO
+	_prev_gap = 0.0
+	_vel_est = Vector3.INF
 	return true
 
 
 ## Lets the target go (out of sight, dead, or something else matters more).
 func release() -> void:
 	_in_burst = false
+	_over = Vector2.ZERO
 	_want = Vector2(NAN, NAN)
 
 
@@ -143,6 +157,14 @@ func track(eye: Vector3, point: Vector3, velocity: Vector3, now: float, dt: floa
 	var p := settings.profile
 	_decay(dt)
 	var aim := point - velocity * (1.0 - p.prediction) * TRACK_LAG
+	if p.track_lag > 0.0:
+		# The bot's idea of the target's velocity trails the real one, so a reversal (a strafe
+		# turning round) is aimed with the old direction for a moment; a steady course is not.
+		if _vel_est.is_finite() and dt > 0.0:
+			_vel_est = _vel_est.lerp(velocity, 1.0 - exp(-dt / p.track_lag))
+		else:
+			_vel_est = velocity
+		aim += (_vel_est - velocity) * LAG_REACH
 	if aim_solver.is_valid():
 		aim = aim_solver.call(eye, aim, velocity)
 	elif projectile_speed > 0.0:
@@ -151,9 +173,26 @@ func track(eye: Vector3, point: Vector3, velocity: Vector3, now: float, dt: floa
 	_err_angle += _err_spin * dt
 	var e := error_deg(now) * (0.55 + 0.45 * sin(_err_angle * 1.7 + 0.3))
 	want += Vector2(e * cos(_err_angle), e * sin(_err_angle) * 0.6)
+	if p.overshoot > 0.0:
+		want += _overshoot(want, dt)
 	_want = want
 	turn_to(want, dt)
 	return Vector2(yaw, pitch)
+
+
+## The extra offset of a flick: a sudden large gap opens an offset past the target, held while
+## the view is still travelling and let go once it has arrived, so the view swings past and back.
+func _overshoot(want: Vector2, dt: float) -> Vector2:
+	var gap := Vector2(wrapf(want.x - yaw, -180.0, 180.0), want.y - pitch)
+	var size := gap.length()
+	if size > 20.0 and _prev_gap < 10.0 and _over == Vector2.ZERO:
+		_over = gap.normalized() * minf(size, 90.0) * settings.profile.overshoot * (0.1 + 0.2 * _rng.next_unit())
+	elif (size < 6.0 or gap.dot(_over) < 0.0) and dt > 0.0:
+		_over *= pow(0.5, dt / 0.12)
+		if _over.length() < 0.05:
+			_over = Vector2.ZERO
+	_prev_gap = size
+	return _over
 
 
 ## Turns the view toward [param point] with no aim error (looking, not shooting).

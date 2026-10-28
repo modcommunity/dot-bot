@@ -86,11 +86,18 @@ var _chase_sound: bool = false
 var _heard_seq: int = 0
 var _hurt_from: Vector3 = Vector3.INF
 var _hurt_at: float = -INF
+var _hurt_pending_at: float = INF
+var _hurt_pending_from: Vector3 = Vector3.INF
 var _known_enemy: Vector3 = Vector3.INF
 
 # Movement.
 var _strafe: float = 0.0
 var _strafe_until: float = -INF
+var _strafe_eased: float = 0.0
+var _hesitate_until: float = -INF
+var _glance_next: float = 0.0
+var _glance_until: float = -INF
+var _glance_off: float = 0.0
 var _waypoint: Vector3 = Vector3.INF
 # The world's route to where the bot is walking, corner by corner, and the goal it was asked for.
 var _route: PackedVector3Array = PackedVector3Array()
@@ -139,8 +146,16 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_ride_reached = -1
 		_heard_at = -INF
 		_hurt_at = -INF
+		_hurt_pending_at = INF
 
 	aim.view_from(me.view_yaw, me.view_pitch)
+
+	if now >= _hurt_pending_at:
+		# The shooter is only noticed a moment after the hit: pain first, then the turn.
+		_hurt_from = _hurt_pending_from
+		_hurt_at = now
+		_known_enemy = _hurt_pending_from
+		_hurt_pending_at = INF
 
 	var all := world.contacts() if world != null else []
 	var seen := _perceive(me, all, world, p, now)
@@ -185,7 +200,10 @@ func _hold_time(p: DotBotProfile, committed: bool) -> float:
 ## Being hit. [param from] is where the shot came from (INF when unknown).
 func hurt(from: Vector3, now: float) -> void:
 	aim.hurt()
-	if from != Vector3.INF:
+	if from != Vector3.INF and settings.profile.hurt_delay > 0.0:
+		_hurt_pending_from = from
+		_hurt_pending_at = now + settings.profile.hurt_delay * (0.6 + 0.8 * _rng.next_unit())
+	elif from != Vector3.INF:
 		_hurt_from = from
 		_hurt_at = now
 		_known_enemy = from
@@ -252,6 +270,8 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 		_roll_stop = _rng.next_unit() < p.stop_to_shoot
 		_roll_crouch = _rng.next_unit() < p.crouch
 		_roll_cover = _rng.next_unit() < p.cover
+		if p.hesitate > 0.0:
+			_hesitate_until = now + p.hesitate * (0.3 + 0.7 * _rng.next_unit())
 		DotLog.trace(CHANNEL, "bot acquires a target", {"bot": id, "target": chosen.id})
 
 	_visible = true
@@ -335,8 +355,22 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 
 	if now >= _strafe_until:
 		_strafe = (1.0 if _rng.next_unit() < 0.5 else -1.0) if _rng.next_unit() < p.strafe else 0.0
-		_strafe_until = now + p.strafe_time * (0.5 + _rng.next_unit())
+		if p.strafe_jitter > 0.0:
+			# Uneven lengths (many short, a few long) and now and then a stop to aim.
+			var u := _rng.next_unit()
+			_strafe_until = now + p.strafe_time * lerpf(0.5 + _rng.next_unit(), 0.2 + 2.0 * u * u, p.strafe_jitter)
+			if _strafe != 0.0 and _rng.next_unit() < 0.25 * p.strafe_jitter:
+				_strafe = 0.0
+		else:
+			_strafe_until = now + p.strafe_time * (0.5 + _rng.next_unit())
 	var side := _strafe
+	if p.strafe_jitter > 0.0:
+		# A body does not reverse at once: it brakes through zero.
+		_strafe_eased = move_toward(_strafe_eased, _strafe, dt * 5.0)
+		side = _strafe_eased
+	if now < _hesitate_until:
+		forward = 0.0
+		side = 0.0
 
 	var long_burst := trigger and dist > p.burst_range * 0.6
 	if long_burst and _roll_stop and not retreat:
@@ -414,6 +448,14 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 	var look := DotBotAim.angles_to(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y))
 	look.x += 25.0 * sin(now * 0.8 + float(id % 97))
 	look.y = 0.0
+	if p.glance > 0.0:
+		if now >= _glance_next and now >= _glance_until:
+			# Turn the head to one side, hold the look, then carry on: a person checking a doorway.
+			_glance_off = (1.0 if _rng.next_unit() < 0.5 else -1.0) * (35.0 + 70.0 * _rng.next_unit())
+			_glance_until = now + 0.35 + 0.6 * _rng.next_unit()
+			_glance_next = _glance_until + (1.5 + 4.0 * _rng.next_unit()) / (0.3 + p.glance)
+		if now < _glance_until:
+			look.x += _glance_off
 	aim.turn_to(look, dt)
 	_set_move(out, dir)
 

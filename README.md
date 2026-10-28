@@ -16,7 +16,7 @@ A bot here is a player. Each tick the brain decides what a person would press (w
 
 The brain sees only what is inside its view cone and in line of sight, and hears gunshots within its hearing range. It reacts after a delay, its first shots miss by a few degrees and get better as the fight goes on, and its view turns at a limited speed. It keeps a preferred range, strafes, fires in bursts at range, can stop or crouch for a long burst, backs out when badly hurt, pre-aims and re-peeks the corner a target went behind, throws a grenade at somebody who just took cover, and roams toward where it last knew of an enemy.
 
-How well it does all that is a profile of about thirty numbers. Four presets (`easy`, `medium`, `hard`, `nightmare`) fill them in, and every number is its own cvar, so a server owner can pick a preset and then change any single setting.
+How well it does all that is a profile of about forty numbers. Four presets (`easy`, `medium`, `hard`, `nightmare`) fill them in, and every number is its own cvar, so a server owner can pick a preset and then change any single setting.
 
 It also has a pool of bot names, so a scoreboard never shows "Bot 2", and a roster that adds or removes bots to reach a count (dot-server's `DotBotQuota` says what the count is).
 
@@ -135,6 +135,13 @@ game-hide-n-seek's `game/hs_bots.gd` is the worked example.
 | `bot_crouch` | 0 | 0.1 | 0.25 | 0.3 | 0 to 1 | Chance per engagement of crouching for long-range fire. |
 | `bot_jump` | 0 | 0.05 | 0.15 | 0.2 | 0 to 2 | Jumps per second while fighting up close. |
 | `bot_map_knowledge` | 0.1 | 0.4 | 0.7 | 1 | 0 to 1 | Chance a roaming bot heads where it last knew of an enemy instead of anywhere. |
+| `bot_react_jitter` | 0.5 | 0.3 | 0.3 | 0.25 | 0 to 2 | How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way). |
+| `bot_overshoot` | 0.6 | 0.4 | 0.4 | 0.3 | 0 to 1 | How far a fast turn onto a target swings past it before coming back (0 is none). |
+| `bot_track_lag` | 0.12 | 0.05 | 0.04 | 0.03 | 0 to 0.5 | Seconds the bot takes to notice a target changed direction (it aims with the old velocity meanwhile). |
+| `bot_strafe_jitter` | 0.6 | 0.6 | 0.5 | 0.4 | 0 to 1 | How irregular strafing is: uneven lengths, pauses, easing into a change of direction (0 is a metronome). |
+| `bot_glance` | 0.8 | 0.6 | 0.5 | 0.4 | 0 to 1 | How often a roaming bot turns its head to look aside and holds the look (0 never). |
+| `bot_hesitate` | 0.35 | 0.2 | 0.12 | 0.06 | 0 to 2 | Seconds a bot may stand still when it first sights somebody before it starts moving. |
+| `bot_hurt_delay` | 0.25 | 0.15 | 0.1 | 0.06 | 0 to 1 | Seconds before a bot that was hit turns toward the shooter (0 is instant). |
 
 Hard is meant to play like a good human player. Nightmare is better than a human, but its reaction never drops to zero and its aim is never exact.
 
