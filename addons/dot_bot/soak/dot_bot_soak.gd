@@ -122,6 +122,8 @@ func finish() -> Dictionary:
 	}
 	var reasons := _judge(report, stats)
 	report["ok"] = reasons.is_empty()
+	if not reasons.is_empty():
+		DotLog.warn(CHANNEL, "soak failed", {"reasons": reasons})
 	report["reasons"] = reasons
 	report["config"] = config.to_dictionary()
 	return report

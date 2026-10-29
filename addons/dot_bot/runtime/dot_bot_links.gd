@@ -84,6 +84,7 @@ static func read(world: Object, options: Dictionary = {}) -> DotBotLinks:
 	links.lethal = float(options.get("lethal", links.lethal))
 	links.margin = float(options.get("margin", links.margin))
 	if world == null:
+		DotLog.debug(CHANNEL, "no world to read; bots get no teleports, kills or doors")
 		return links
 
 	var io: Object = world.get("io")
