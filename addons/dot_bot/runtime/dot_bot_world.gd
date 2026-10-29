@@ -68,8 +68,41 @@ func contacts() -> Array:
 	return contacts_fn.call() if contacts_fn.is_valid() else []
 
 
+## `{center, radius, until}` per sight blocker (smoke), by id; a segment through one is not clear.
+var sight_blockers: Dictionary = {}
+var _blocker_seq: int = 0
+
+
 func line_of_sight(from: Vector3, to: Vector3) -> bool:
+	for b: Dictionary in sight_blockers.values():
+		if segment_hits_sphere(from, to, b["center"], float(b["radius"])):
+			return false
 	return bool(line_of_sight_fn.call(from, to)) if line_of_sight_fn.is_valid() else true
+
+
+## Blocks sight through a sphere until [param until] (game time); returns an id for [method remove_sight_blocker].
+func add_sight_blocker(center: Vector3, radius: float, until: float) -> int:
+	_blocker_seq += 1
+	sight_blockers[_blocker_seq] = {"center": center, "radius": radius, "until": until}
+	return _blocker_seq
+
+
+func remove_sight_blocker(id: int) -> void:
+	sight_blockers.erase(id)
+
+
+## Drops the blockers that ended by [param now]; the brain calls it each think.
+func prune_sight_blockers(now: float) -> void:
+	for id in sight_blockers.keys():
+		if now >= float(sight_blockers[id]["until"]):
+			sight_blockers.erase(id)
+
+
+static func segment_hits_sphere(from: Vector3, to: Vector3, center: Vector3, radius: float) -> bool:
+	var d := to - from
+	var len2 := d.length_squared()
+	var t := 0.0 if len2 < 0.000001 else clampf((center - from).dot(d) / len2, 0.0, 1.0)
+	return (from + d * t).distance_squared_to(center) <= radius * radius
 
 
 func waypoints() -> PackedVector3Array:

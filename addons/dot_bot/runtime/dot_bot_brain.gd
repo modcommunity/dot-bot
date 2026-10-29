@@ -89,6 +89,7 @@ var _hurt_at: float = -INF
 var _hurt_pending_at: float = INF
 var _hurt_pending_from: Vector3 = Vector3.INF
 var _known_enemy: Vector3 = Vector3.INF
+var _blind_until: float = -INF
 
 # Movement.
 var _strafe: float = 0.0
@@ -157,6 +158,8 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_known_enemy = _hurt_pending_from
 		_hurt_pending_at = INF
 
+	if world != null:
+		world.prune_sight_blockers(now)
 	var all := world.contacts() if world != null else []
 	var seen := _perceive(me, all, world, p, now)
 	if world != null:
@@ -209,6 +212,18 @@ func hurt(from: Vector3, now: float) -> void:
 		_known_enemy = from
 
 
+## Flashed: sees nothing for [param seconds] (hearing and pain still work). [param from] is where the
+## flash went off, so the bot turns toward it afterwards (INF when unknown).
+func blind_for(now: float, seconds: float, from: Vector3 = Vector3.INF) -> void:
+	_blind_until = maxf(_blind_until, now + seconds)
+	if from != Vector3.INF:
+		_known_enemy = from
+
+
+func is_blind(now: float) -> bool:
+	return now < _blind_until
+
+
 ## The current or last engagement, for a suite: when the target was first seen, when the bot
 ## could first fire, when it first did, and how far off the target its view was then.
 func engagement() -> Dictionary:
@@ -220,6 +235,10 @@ func engagement() -> Dictionary:
 # --- Seeing ---------------------------------------------------------------------
 
 func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, now: float) -> DotBotContact:
+	if now < _blind_until:
+		if _visible:
+			_lose(p, now)
+		return null
 	var eye := me.eye()
 	var forward := DotBotAim.direction(aim.yaw, aim.pitch)
 	var half := p.fov * 0.5

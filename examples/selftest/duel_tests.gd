@@ -429,3 +429,49 @@ func _human_hurt_delay() -> void:
 	_check(lag_turn[false] < 0.03, "it turns at once with bot_hurt_delay 0", "%.3f" % lag_turn[false])
 	_check(lag_turn[true] > 0.07 and lag_turn[true] < 0.35, "it turns after a beat with bot_hurt_delay on", "%.3f" % lag_turn[true])
 
+
+
+func _test_utility_grenades() -> void:
+	_section("utility grenades: a flashed bot is blind, smoke blocks sight")
+
+	var s := DotBotSettings.new()
+	s.set_difficulty("nightmare")
+
+	var sc := _scene(Vector3(0, 0, -15))
+	var brain := DotBotBrain.new(1, s)
+	var seen := _run_bot(brain, sc[0], sc[2], 1.5)
+	_check(seen.any(func(i: DotBotIntent) -> bool: return i.target_id == 2), "unflashed, the bot sees a target in the open")
+	_check(seen.any(func(i: DotBotIntent) -> bool: return i.fire), "unflashed, it fires at it")
+
+	sc = _scene(Vector3(0, 0, -15))
+	brain = DotBotBrain.new(1, s)
+	brain.blind_for(0.0, 2.0)
+	_check(brain.is_blind(1.0) and not brain.is_blind(2.5), "blind_for lasts its seconds")
+	var blind := _run_bot(brain, sc[0], sc[2], 1.9)
+	_check(blind.all(func(i: DotBotIntent) -> bool: return not i.fire and i.target_id == -1), "a flashed bot neither targets nor fires during its blind time")
+	var after := _run_bot(brain, sc[0], sc[2], 1.5, 2.0)
+	_check(after.any(func(i: DotBotIntent) -> bool: return i.target_id == 2), "and sees the target again once it ends")
+
+	sc = _scene(Vector3(0, 0, -15))
+	brain = DotBotBrain.new(1, s)
+	var pre := _run_bot(brain, sc[0], sc[2], 1.0)
+	_check(pre.any(func(i: DotBotIntent) -> bool: return i.target_id == 2), "a flash lands on a bot already fighting")
+	brain.blind_for(1.0, 1.0)
+	var mid := _run_bot(brain, sc[0], sc[2], 0.9, 1.0)
+	_check(mid.all(func(i: DotBotIntent) -> bool: return not i.fire and i.target_id == -1), "it drops the target and stops firing")
+
+	sc = _scene(Vector3(0, 0, -15))
+	var world: DotBotWorld = sc[2]
+	brain = DotBotBrain.new(1, s)
+	pre = _run_bot(brain, sc[0], world, 1.0)
+	_check(pre.any(func(i: DotBotIntent) -> bool: return i.target_id == 2), "before the smoke the bot sees the target")
+	var id := world.add_sight_blocker(Vector3(0, 1, -7), 3.0, 3.0)
+	var smoked := _run_bot(brain, sc[0], world, 1.0, 1.0)
+	_check(smoked.all(func(i: DotBotIntent) -> bool: return i.target_id == -1 and not i.fire), "a target behind smoke is not seen")
+	_check(not world.line_of_sight(Vector3.ZERO, Vector3(0, 0, -15)) and world.line_of_sight(Vector3.ZERO, Vector3(15, 0, 0)), "only a segment through the cloud is blocked")
+	world.remove_sight_blocker(id)
+	_check(_run_bot(brain, sc[0], world, 1.5, 2.0).any(func(i: DotBotIntent) -> bool: return i.target_id == 2), "and is seen again when the smoke goes")
+	var timed := world.add_sight_blocker(Vector3(0, 1, -7), 3.0, 2.5)
+	var _t := _run_bot(brain, sc[0], world, 1.0, 2.0)
+	_check(not world.sight_blockers.has(timed), "smoke ends by its own time")
+	_done()

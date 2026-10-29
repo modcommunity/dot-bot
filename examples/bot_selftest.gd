@@ -3,14 +3,14 @@ extends "res://examples/selftest/config_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 264
+const CHECKS := 276
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 30
+const SECTIONS := 31
 
 
 func _ready() -> void:
@@ -52,6 +52,7 @@ func _run() -> void:
 	_test_ride_pick()
 	_test_aim_solver()
 	_test_humanisation()
+	_test_utility_grenades()
 
 	print("")
 	print("%d passed, %d failed" % [_passed, _failed])

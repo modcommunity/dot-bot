@@ -23,5 +23,7 @@ extends RefCounted
 #    a recorder class. A game that records links dot-bot-record (its own requires entry).
 # 7: DotBotNav.joined (whether a walk between two points can exist, from the islands and rides,
 #    without a path query that errors between islands).
-const LEVEL := 7
+# 8: DotBotBrain.blind_for, is_blind (a flashed bot sees nothing for its seconds); DotBotWorld.add_sight_blocker,
+#    remove_sight_blocker, prune_sight_blockers (smoke: line of sight through a sphere is refused).
+const LEVEL := 8
 const OLDEST := 1
