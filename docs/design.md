@@ -22,6 +22,11 @@ Everything is in `DotBotWorld`: the bodies, a line-of-sight answer, places to wa
 
 `bot_through_walls` exists for tests and is 0 in every preset. "No shooting through walls" is then structural: the brain cannot fire at what it has not seen, and game-arena's `headless_bots` counts every trigger pull without line of sight (zero, over thousands of shots per preset).
 
+
+### Flashes and smoke (API level 8)
+
+`DotBotBrain.blind_for(now, seconds, from)` makes a bot see nothing for its seconds: it loses a visible target, while hearing and pain still work, and `from` (where the flash went off, or `Vector3.INF`) is where it turns afterwards. `is_blind(now)` asks. `DotBotWorld.add_sight_blocker(center, radius, until)` makes `line_of_sight` refuse any segment through that sphere until game time `until` (smoke) and returns an id for `remove_sight_blocker(id)`; the brain prunes ended ones each think through `prune_sight_blockers(now)`. A game's grenade code calls these; the addon names no grenade. A consumer that must still load against an older dot-bot guards with `DotAddonApi.build_level("dot_bot") >= 8`.
+
 ## The states
 
 Each tick the brain perceives first, then does one of:
