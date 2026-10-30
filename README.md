@@ -88,6 +88,8 @@ roster.keep(quota.wanted(humans, max_players), bot_ids,
 ### Flashes and smoke
 Added at API level 8. `brain.blind_for(now, 3.0, flash_position)` blinds a bot (it sees nothing, still hears), and `world.add_sight_blocker(center, radius, until)` makes line of sight through a sphere fail until `until` (returns an id for `remove_sight_blocker`). A consumer that has to run against older builds guards with `DotAddonApi.build_level("dot_bot") >= 8`. See [design](docs/design.md#flashes-and-smoke-api-level-8).
 
+Added at API level 9. Ladders: `DotBotLinks` joins each ladder brush as a one-way up edge, and the brain climbs it when the game assigns `world.ladder_fn = links.ladder_of` after `links.join(nav)`. The brain faces the ladder, holds forward, and hops off at the top. A consumer guards with `DotAddonApi.build_level("dot_bot") >= 9`.
+
 ### Hiding, searching and walking a map
 For games where bots hide and seek rather than fight, three helpers sit beside the brain. `DotBotNav` bakes a navigation mesh from your map's colliders when the map is built (pass the bodies that never move, so a door baked shut is not a wall) and gives paths and seeded random points. `DotBotHiding` scores places by how many of the map's sight lines reach them, picks one apart from the other hiders, and finds somewhere out of a seeker's sight to run to. `DotBotSearch` is a seeker's memory: the likely places first, crossed off once looked at, and the places near a sound put back on the list.
 

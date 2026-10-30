@@ -447,7 +447,7 @@ func _join_platforms(nav: DotBotNav) -> int:
 
 func describe() -> Dictionary:
 	return {"teleports": teleports.size(), "kills": kills.size(), "doors": doors.size(), "later": later.size(),
-		"gadgets": gadgets.size(), "swings": swings.size(), "platforms": platforms.size(), "legs": platform_links.size(), "skipped": skipped.duplicate(), "joined": joined.duplicate()}
+		"gadgets": gadgets.size(), "ladders": ladders.size(), "swings": swings.size(), "platforms": platforms.size(), "legs": platform_links.size(), "skipped": skipped.duplicate(), "joined": joined.duplicate()}
 
 
 func _read_volume(node: Object, destinations: Dictionary) -> void:

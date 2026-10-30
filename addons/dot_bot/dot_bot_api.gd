@@ -25,5 +25,6 @@ extends RefCounted
 #    without a path query that errors between islands).
 # 8: DotBotBrain.blind_for, is_blind (a flashed bot sees nothing for its seconds); DotBotWorld.add_sight_blocker,
 #    remove_sight_blocker, prune_sight_blockers (smoke: line of sight through a sphere is refused).
-const LEVEL := 8
+# 9: ladders: DotBotLinks.ladders / ladder_of, DotBotWorld.ladder_fn (a game assigns links.ladder_of).
+const LEVEL := 9
 const OLDEST := 1

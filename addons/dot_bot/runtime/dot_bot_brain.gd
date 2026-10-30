@@ -559,17 +559,19 @@ func _toward(me: DotBotContact, world: DotBotWorld, goal: Vector3) -> Vector2:
 
 
 ## Overrides this tick's legs while a ladder is climbed: face its nearest point and push forward (the controller turns that
-## into motion up it), then at the top walk onto the landing. The view and trigger stay the brain's.
+## into motion up it), then at the top hop off the ladder and walk onto the landing (walking away while on it would descend). The view and trigger stay the brain's.
 func _climb_step(me: DotBotContact, now: float, out: DotBotIntent) -> void:
 	var to: Vector3 = _climb["to"]
 	if now - float(_climb["since"]) > CLIMB_TIMEOUT:
 		_end_climb()
 		return
 	var target := to
-	if me.position.y >= to.y - 0.3 and is_nan(float(_climb["exit_since"])):
+	var hop := false
+	var box: AABB = _climb["box"]
+	if me.position.y >= minf(to.y - 0.1, box.end.y + 0.02) and is_nan(float(_climb["exit_since"])):
 		_climb["exit_since"] = now
+		hop = true
 	if is_nan(float(_climb["exit_since"])):
-		var box: AABB = _climb["box"]
 		target = Vector3(clampf(me.position.x, box.position.x, box.end.x), 0.0, clampf(me.position.z, box.position.z, box.end.z))
 	elif Vector2(to.x - me.position.x, to.z - me.position.z).length() < 0.5 or now - float(_climb["exit_since"]) > CLIMB_EXIT:
 		_end_climb()
@@ -580,7 +582,7 @@ func _climb_step(me: DotBotContact, now: float, out: DotBotIntent) -> void:
 	out.yaw = aim.yaw
 	out.pitch = 0.0
 	out.move = Vector2(0.0, 1.0)
-	out.jump = false
+	out.jump = hop
 	out.crouch = false
 	out.state = &"climb"
 
