@@ -102,6 +102,8 @@ for index in links.doors_touched(feet, 0.35, 1.8):  # each step: doors a body is
 
 A teleport is added with `DotBotNav.add_ride` so a path crosses it, but nothing is ridden: the bot stands in the box and the map moves it. A volume that is disabled, filtered or not for clients is left out (and counted); one a button enables later is not known, so the path stops short of it.
 
+Ladders. A ladder box from `world.ladder_boxes()` becomes a one-way ride (`DotBotLinks.LADDER_ID`) from a mesh point at its foot to one at its top, when the top rises at least a metre. The brain, on reaching the foot, faces the box and pushes forward (the controller's ladder mode does the climbing), then walks off toward the top point. It needs `DotBotWorld.ladder_fn = links.ladder_of`; a game that leaves it unset sees the ride as a plain one and the bot stalls at the foot.
+
 ## DotBotNav usage
 
 ```gdscript

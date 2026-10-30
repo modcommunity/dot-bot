@@ -134,6 +134,14 @@ func route_detail(from: Vector3, to: Vector3) -> Dictionary:
 	return {"points": points, "rides": rides}
 
 
+## The ladder behind a ride id ([constant DotBotLinks.LADDER_ID] up): `{"box": AABB, "to": Vector3}`, or an empty dictionary. Assign [code]links.ladder_of[/code].
+var ladder_fn := Callable()
+
+
+func ladder(ride_id: int) -> Dictionary:
+	return ladder_fn.call(ride_id) if ladder_fn.is_valid() else {}
+
+
 func projectile_speed(shooter: DotBotContact) -> float:
 	return float(projectile_speed_fn.call(shooter)) if projectile_speed_fn.is_valid() else 0.0
 

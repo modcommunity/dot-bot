@@ -18,6 +18,16 @@ const PLATFORM_ID := 3000000
 const DROP_MIN := 0.6
 ## Ride ids from here up are jumps across a gap ([method DotBotNav.find_hops]).
 const HOP_ID := 4000000
+## Ride ids from here up are ladders, climbed by the brain itself ([method ladder_of]), not handed to a game's rider.
+const LADDER_ID := 5000000
+## A ladder's travel cost per metre: slower than walking, so a stair or ramp beside it wins.
+const LADDER_COST := 1.5
+## Metres out from a ladder's face tried for its foot and top, and how far a mesh point may be from the try.
+const LADDER_FOOT_OFFSETS := [0.5, 0.9]
+const LADDER_TOP_OFFSETS := [0.4, 0.8, 1.2, 1.6]
+const LADDER_SNAP := 0.5
+## Metres a ladder must rise to get an edge.
+const LADDER_MIN_RISE := 1.0
 ## Metres a platform's centre may be from a stop and count as standing there.
 const STOP_REACH := 0.8
 ## A teleport's travel cost per metre: the trip is instant, but not free, so a short walk still wins.
@@ -52,6 +62,8 @@ var platforms: Array[Dictionary] = []
 ## `{"from": Vector3, "to": Vector3, "platform": int, "stop_from": int, "stop_to": int, "id": int}` per leg a train carries a body.
 var platform_links: Array[Dictionary] = []
 var _platforms_joined := false
+## `{"box": AABB, "from": Vector3, "to": Vector3}` per ladder brush; from and to are set once [method join] attached it.
+var ladders: Array[Dictionary] = []
 var _attached := {}
 ## Whether [method join] adds drop edges down from the mesh's rims, and how many it added.
 var drops: bool = true
@@ -87,6 +99,9 @@ static func read(world: Object, options: Dictionary = {}) -> DotBotLinks:
 		DotLog.debug(CHANNEL, "no world to read; bots get no teleports, kills or doors")
 		return links
 
+	if world.has_method("ladder_boxes"):
+		for box: AABB in world.call("ladder_boxes"):
+			links.ladders.append({"box": box})
 	var io: Object = world.get("io")
 	var destinations: Dictionary = io.get("destinations") if io != null else {}
 	var volumes: Object = world.get("volumes")
@@ -171,6 +186,8 @@ func join(nav: DotBotNav) -> Dictionary:
 		_attached[i] = true
 		t["from"] = from
 		stats["joined"] += 1
+	if not ladders.is_empty():
+		stats["ladders"] = _join_ladders(nav)
 	if not _platforms_joined:
 		_platforms_joined = true
 		stats["platforms"] = _join_platforms(nav)
@@ -182,6 +199,51 @@ func join(nav: DotBotNav) -> Dictionary:
 		stats["hops"] = hopped
 	joined = stats
 	return stats
+
+
+## The ladder behind ride [param ride_id] as `{"box", "from", "to"}`, or an empty dictionary: what [member DotBotWorld.ladder_fn] answers.
+func ladder_of(ride_id: int) -> Dictionary:
+	var i := ride_id - LADDER_ID
+	if i < 0 or i >= ladders.size() or not ladders[i].has("from"):
+		return {}
+	return ladders[i]
+
+
+## One-way up edges from each ladder's foot to its top, both on the mesh; returns how many were added.
+func _join_ladders(nav: DotBotNav) -> int:
+	var added := 0
+	for i in ladders.size():
+		var l := ladders[i]
+		if l.has("from"):
+			continue
+		var box: AABB = l["box"]
+		var from := _ladder_end(nav, box, box.position.y, LADDER_FOOT_OFFSETS)
+		var to := _ladder_end(nav, box, box.end.y, LADDER_TOP_OFFSETS)
+		if from == Vector3.INF or to == Vector3.INF or to.y - from.y < LADDER_MIN_RISE:
+			continue
+		l["from"] = from
+		l["to"] = to
+		nav.add_ride(from, to, LADDER_ID + i, LADDER_COST)
+		added += 1
+	return added
+
+
+## The mesh point nearest to where a body would stand at [param y] out from either face of the ladder.
+func _ladder_end(nav: DotBotNav, box: AABB, y: float, offsets: Array) -> Vector3:
+	var along_x := box.size.x < box.size.z
+	var centre := box.get_center()
+	var best := Vector3.INF
+	var best_d := LADDER_SNAP
+	for side in [-1.0, 1.0]:
+		for out: float in offsets:
+			var reach: float = (box.size.x if along_x else box.size.z) * 0.5 + out
+			var at := Vector3(centre.x + side * reach, y, centre.z) if along_x else Vector3(centre.x, y, centre.z + side * reach)
+			var near := nav.closest(at)
+			var d := Vector2(near.x - at.x, near.z - at.z).length()
+			if d < best_d and absf(near.y - y) < 0.8:
+				best = near
+				best_d = d
+	return best
 
 
 ## Takes in the teleports a button has enabled since [method read] and joins them. Returns how many are new.

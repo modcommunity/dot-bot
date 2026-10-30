@@ -3,14 +3,14 @@ extends "res://examples/selftest/config_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 286
+const CHECKS := 292
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 32
+const SECTIONS := 33
 
 
 func _ready() -> void:
@@ -44,6 +44,7 @@ func _run() -> void:
 	await _test_ride_edges()
 	await _test_links()
 	await _test_unlock_export()
+	await _test_ladders()
 	await _test_kill_avoidance()
 	_test_harvest_verify()
 	await _test_harvest_store()
@@ -114,6 +115,10 @@ class FakeIo extends RefCounted:
 class FakeWorld extends RefCounted:
 	var io := FakeIo.new()
 	var volumes := FakeVolumes.new()
+	var ladders: Array[AABB] = []
+
+	func ladder_boxes() -> Array[AABB]:
+		return ladders
 
 
 class FakeVolumes extends RefCounted:
@@ -198,6 +203,78 @@ func _test_links() -> void:
 		"the route says where the teleport starts (inside its box) and lands", str(hop["rides"]))
 	var empty := DotBotLinks.read(null)
 	_check(empty.teleports.is_empty() and empty.kills.is_empty() and empty.doors.is_empty(), "no map, no links")
+	nav.clear()
+	made[0].queue_free()
+	_done()
+
+
+## One roaming bot on a toy body for [param seconds]: ground below x 0, a platform 4 m up from x 0, a ladder on its face.
+## The body climbs as dot-player-controller's ladder mode does: forward into the ladder's face is up.
+func _ladder_run(world: DotBotWorld, ladder: AABB, seconds: float) -> Dictionary:
+	var me := DotBotContact.make(1, Vector3(-6.0, 0.0, 0.0))
+	me.view_yaw = 90.0
+	me.view_pitch = 0.0
+	world.contacts_fn = func() -> Array: return [me]
+	var brain := DotBotBrain.new(5)
+	var t := 0.0
+	var top := 0.0
+	var climbed := false
+	while t < seconds:
+		var intent := brain.think(me, world, t)
+		me.view_yaw = intent.yaw
+		me.view_pitch = intent.pitch
+		var y := deg_to_rad(intent.yaw)
+		var forward := Vector3(-sin(y), 0.0, -cos(y))
+		var right := Vector3(cos(y), 0.0, -sin(y))
+		var wish := (right * intent.move.x + forward * intent.move.y) * 3.81
+		var hull := AABB(me.position - Vector3(0.4, 0.0, 0.4), Vector3(0.8, 1.8, 0.8))
+		var away := Vector3(-1.0, 0.0, 0.0)
+		if hull.intersects(ladder) and -wish.dot(away) > 0.1 and me.position.y < 4.0:
+			me.position.y += -wish.dot(away) * TICK
+			climbed = true
+		else:
+			me.position += wish * TICK
+			if me.position.y < 3.9:
+				me.position.x = minf(me.position.x, -0.55)
+			var floor_y := 4.0 if me.position.y >= 3.9 and me.position.x > -0.6 else 0.0
+			me.position.y = maxf(floor_y, me.position.y - 10.0 * TICK)
+		top = maxf(top, me.position.y)
+		t += TICK
+	return {"position": me.position, "top": top, "climbed": climbed}
+
+
+## A bot reaches a platform only a ladder leads to: the nav links it, the brain walks to its foot, climbs and steps off.
+func _test_ladders() -> void:
+	_section("ladders: a platform only a ladder reaches is reached")
+	var made := await _floors([Vector3(-5.0, 0.0, 0.0), Vector3(5.0, 4.0, 0.0)], Vector3(10.0, 0.0, 10.0))
+	var ladder := AABB(Vector3(-0.2, 0.0, -0.5), Vector3(0.2, 4.0, 1.0))
+	var fake := FakeWorld.new()
+	fake.ladders.append(ladder)
+	fake.ladders.append(AABB(Vector3(-0.2, 0.0, 3.0), Vector3(0.2, 0.5, 1.0)))
+	var links := DotBotLinks.read(fake)
+	var nav := DotBotNav.new()
+	var baked := nav.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+	var goal := Vector3(5.0, 4.0, -3.0)
+	var walked := nav.path(Vector3(-6.0, 0.0, 0.0), goal)
+	_check(baked.ok and (walked.is_empty() or walked[walked.size() - 1].distance_to(goal) > 1.0), "without ladder links the platform is out of reach")
+	var world := DotBotWorld.new()
+	world.waypoints_fn = func() -> PackedVector3Array: return PackedVector3Array([goal])
+	world.route_detail_fn = func(from: Vector3, to: Vector3) -> Dictionary: return nav.route(from, to)
+	var without := _ladder_run(world, ladder, 30.0)
+	_check(not without["climbed"] and (without["top"] as float) < 0.5, "with no ladder links a bot never leaves the floor", str(without))
+	var stats := links.join(nav)
+	_check(links.ladders.size() == 2 and int(stats.get("ladders", 0)) == 1, "one of two ladders joins: the stub that rises under a metre does not", str(stats))
+	var route := nav.route(Vector3(-6.0, 0.0, 0.0), goal)
+	var rides: PackedInt32Array = route["rides"]
+	var points: PackedVector3Array = route["points"]
+	var mark := rides.find(DotBotLinks.LADDER_ID)
+	_check(mark >= 0 and points[mark].y < 0.5 and points[mark + 1].y > 3.5, "the route crosses the ladder from its foot to its top", str(rides))
+	_check(not links.ladder_of(DotBotLinks.LADDER_ID).is_empty() and links.ladder_of(DotBotLinks.LADDER_ID + 1).is_empty(), "ladder_of answers for the joined ladder only")
+
+	world.ladder_fn = links.ladder_of
+	var run := _ladder_run(world, ladder, 30.0)
+	var at: Vector3 = run["position"]
+	_check(run["climbed"] and at.y > 3.9 and at.x > 0.3, "with it the bot climbs and is on the platform", str(run))
 	nav.clear()
 	made[0].queue_free()
 	_done()
