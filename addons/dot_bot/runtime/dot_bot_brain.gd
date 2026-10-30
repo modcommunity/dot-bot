@@ -55,10 +55,6 @@ const MAX_STEP := 0.25
 ## Metres from a route's corner at which it counts as passed.
 const CORNER := 1.0
 
-## Longest a ladder is climbed before the bot gives up, seconds, and the longest it spends stepping off the top.
-const CLIMB_TIMEOUT := 20.0
-const CLIMB_EXIT := 1.5
-
 var id: int = 0
 var settings: DotBotSettings = null
 
@@ -116,8 +112,8 @@ var _route_rides: PackedInt32Array = PackedInt32Array()
 var _route_goal: Vector3 = Vector3.INF
 # The ride a corner just reached, for this tick's intent.
 var _ride_reached: int = -1
-# The ladder being climbed: {"box", "to", "since", "exit_since"}, or empty.
-var _climb: Dictionary = {}
+# The ladder being climbed, or null.
+var _climb: DotBotClimb = null
 var _stuck_at: float = 0.0
 var _stuck_from: Vector3 = Vector3.INF
 
@@ -157,7 +153,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_waypoint = Vector3.INF
 		_route_goal = Vector3.INF
 		_ride_reached = -1
-		_climb = {}
+		_climb = null
 		_heard_at = -INF
 		_hurt_at = -INF
 		_hurt_pending_at = INF
@@ -193,7 +189,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	out.pitch = aim.pitch
 	tricks.apply(me, world, p, _rng, _scene, _scene_up, aim.yaw, now, dt, out)
 	out.target_id = target_id if _visible else -1
-	if not _climb.is_empty():
+	if _climb != null:
 		_climb_step(me, now, out)
 	out.ride = _ride_reached
 	_ride_reached = -1
@@ -546,49 +542,36 @@ func _toward(me: DotBotContact, world: DotBotWorld, goal: Vector3) -> Vector2:
 			var ride := _route_rides[0]
 			var ladder := world.ladder(ride) if ride >= 0 and world != null else {}
 			if not ladder.is_empty():
-				_climb = {"box": ladder["box"], "to": ladder["to"], "since": _now, "exit_since": NAN}
+				_climb = DotBotClimb.begin(ladder, _now)
 			elif ride >= 0:
 				_ride_reached = ride
 			_route_rides.remove_at(0)
 		_route.remove_at(0)
-		if not _climb.is_empty():
+		if _climb != null:
 			break
 	var at := _route[0] if not _route.is_empty() else goal
 	var flat := Vector2(at.x, at.z) - here
 	return flat.normalized() if flat.length() > 0.01 else Vector2.ZERO
 
 
-## Overrides this tick's legs while a ladder is climbed: face its nearest point and push forward (the controller turns that
-## into motion up it), then at the top hop off the ladder and walk onto the landing (walking away while on it would descend). The view and trigger stay the brain's.
+## Overrides this tick's legs while a ladder is climbed; the view and trigger stay the brain's.
 func _climb_step(me: DotBotContact, now: float, out: DotBotIntent) -> void:
-	var to: Vector3 = _climb["to"]
-	if now - float(_climb["since"]) > CLIMB_TIMEOUT:
+	var r := _climb.step(me.position, now)
+	if r["done"]:
 		_end_climb()
 		return
-	var target := to
-	var hop := false
-	var box: AABB = _climb["box"]
-	if me.position.y >= minf(to.y - 0.1, box.end.y + 0.02) and is_nan(float(_climb["exit_since"])):
-		_climb["exit_since"] = now
-		hop = true
-	if is_nan(float(_climb["exit_since"])):
-		target = Vector3(clampf(me.position.x, box.position.x, box.end.x), 0.0, clampf(me.position.z, box.position.z, box.end.z))
-	elif Vector2(to.x - me.position.x, to.z - me.position.z).length() < 0.5 or now - float(_climb["exit_since"]) > CLIMB_EXIT:
-		_end_climb()
-		return
-	var flat := Vector2(target.x - me.position.x, target.z - me.position.z)
-	if flat.length() > 0.01:
-		aim.view_from(rad_to_deg(atan2(-flat.x, -flat.y)), 0.0)
+	if not is_nan(float(r["yaw"])):
+		aim.view_from(float(r["yaw"]), 0.0)
 	out.yaw = aim.yaw
 	out.pitch = 0.0
-	out.move = Vector2(0.0, 1.0)
-	out.jump = hop
+	out.move = r["move"]
+	out.jump = r["jump"]
 	out.crouch = false
 	out.state = &"climb"
 
 
 func _end_climb() -> void:
-	_climb = {}
+	_climb = null
 	_route_goal = Vector3.INF
 
 
