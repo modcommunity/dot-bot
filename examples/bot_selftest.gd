@@ -3,7 +3,7 @@ extends "res://examples/selftest/config_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 292
+const CHECKS := 294
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
@@ -276,6 +276,12 @@ func _test_ladders() -> void:
 	var at: Vector3 = run["position"]
 	_check(run["climbed"] and at.y > 3.9 and at.x > 0.3, "with it the bot climbs and is on the platform", str(run))
 	nav.clear()
+	var nav2 := DotBotNav.new()
+	nav2.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+	var shared := DotBotLinks.link_ladders(nav2, [ladder, AABB(Vector3(-0.2, 0.0, 3.0), Vector3(0.2, 0.5, 1.0))])
+	_check(shared != null and not shared.ladder_of(DotBotLinks.LADDER_ID).is_empty(), "link_ladders joins the tall ladder and hands back ladder_of")
+	_check(DotBotLinks.link_ladders(nav2, []) == null and DotBotLinks.link_ladders(nav2, [AABB(Vector3(-0.2, 0.0, 3.0), Vector3(0.2, 0.5, 1.0))]) == null, "no ladders, or none tall enough, give null")
+	nav2.clear()
 	made[0].queue_free()
 	_done()
 

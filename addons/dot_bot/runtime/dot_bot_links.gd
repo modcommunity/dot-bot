@@ -201,6 +201,20 @@ func join(nav: DotBotNav) -> Dictionary:
 	return stats
 
 
+## Joins [param boxes] (ladder volumes in world space) into [param nav] as one-way climbs and returns the links, or null when none attached.
+## Give the result's `ladder_of` to [member DotBotWorld.ladder_fn]; the game's own mesh needs no other change.
+static func link_ladders(nav: DotBotNav, boxes: Array) -> DotBotLinks:
+	if nav == null or boxes.is_empty():
+		return null
+	var links := DotBotLinks.new()
+	links.drops = false
+	for box: AABB in boxes:
+		links.ladders.append({"box": box})
+	var stats := links.join(nav)
+	DotLog.debug(CHANNEL, "ladders linked", {"ladders": boxes.size(), "edges": int(stats.get("ladders", 0))})
+	return links if int(stats.get("ladders", 0)) > 0 else null
+
+
 ## The ladder behind ride [param ride_id] as `{"box", "from", "to"}`, or an empty dictionary: what [member DotBotWorld.ladder_fn] answers.
 func ladder_of(ride_id: int) -> Dictionary:
 	var i := ride_id - LADDER_ID

@@ -26,5 +26,6 @@ extends RefCounted
 # 8: DotBotBrain.blind_for, is_blind (a flashed bot sees nothing for its seconds); DotBotWorld.add_sight_blocker,
 #    remove_sight_blocker, prune_sight_blockers (smoke: line of sight through a sphere is refused).
 # 9: ladders: DotBotLinks.ladders / ladder_of, DotBotWorld.ladder_fn (a game assigns links.ladder_of).
-const LEVEL := 9
+# 10: DotBotLinks.link_ladders (boxes and a nav in, links out; assign its ladder_of to ladder_fn).
+const LEVEL := 10
 const OLDEST := 1
