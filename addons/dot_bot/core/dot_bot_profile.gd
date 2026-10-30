@@ -54,9 +54,9 @@ const SPEC := [
 	# Fighting
 	["range", 1.0, 100.0, 8.0, 10.0, 12.0, 12.0, "Distance the bot likes to fight at, metres."],
 	["max_range", 1.0, 500.0, 25.0, 35.0, 50.0, 70.0, "Farthest the bot opens fire from, metres."],
-	["burst", 0.05, 5.0, 0.6, 0.35, 0.3, 0.25, "Seconds of trigger held per burst beyond burst_range."],
-	["burst_pause", 0.0, 5.0, 0.6, 0.3, 0.22, 0.12, "Seconds between bursts beyond burst_range."],
-	["burst_range", 0.0, 500.0, 12.0, 16.0, 18.0, 24.0, "Beyond this the bot fires in bursts; inside it, it holds the trigger."],
+	["burst", 0.05, 5.0, 0.6, 0.35, 0.3, 0.35, "Seconds of trigger held per burst beyond burst_range."],
+	["burst_pause", 0.0, 5.0, 0.6, 0.3, 0.22, 0.4, "Seconds between bursts beyond burst_range."],
+	["burst_range", 0.0, 500.0, 12.0, 16.0, 18.0, 4.0, "Beyond this the bot fires in bursts; inside it, it holds the trigger."],
 	["aggression", 0.0, 1.0, 0.3, 0.5, 0.6, 0.8, "How readily it chases a lost target or a sound instead of holding."],
 	["cover", 0.0, 1.0, 0.1, 0.3, 0.6, 0.7, "Chance of backing out of a fight when badly hurt."],
 	["grenades", 0.0, 1.0, 0.0, 0.2, 0.5, 0.7, "Chance of throwing at a target that just went behind cover."],
