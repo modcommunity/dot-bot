@@ -28,6 +28,8 @@ Then 100 one-on-one duels per preset against a hand-scripted opponent in a world
 
 **game-arena's `headless_bots`** plays each preset for 300 s of one-on-one on dm_box against a reference player whose settings are pinned in the suite (an ordinary player), with arena's real weapons, movement and trace: K/D easy 0.45, medium 1.20, hard 1.72, nightmare 2.75, never a shot without line of sight, never a turn above `bot_turn_rate`. A real map compresses the spread: spawns, corners and who sees whom first decide a lot of fights.
 
+**game-arena's `headless_bottricks`** plays easy and nightmare for 240 s on dm_atrium and dm_pit against another bot with the air-jump on, and counts the real motor's slides, wall runs and launches: easy 6 slides, 0 wall runs and 0 launches; nightmare 80, 12 and 23. With the air-jump off in the game, a nightmare bot never presses it. dot-bot's suite holds the same shape on a toy motor.
+
 Neither reaches whether a bot *looks* human. game-arena's `tools/render_bots.sh [preset]` photographs one over its shoulder every 0.4 s and logs its state, target, line of sight and trigger.
 
 ## Changing a preset

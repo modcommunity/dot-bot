@@ -25,6 +25,10 @@ var crouch: bool = false
 var jump: bool = false
 var walk: bool = false
 
+## Press the game's air-jump (a launch into the air) this tick. Written only where the game
+## names the button, see [method write_move].
+var air_jump: bool = false
+
 ## Throw a grenade (or whatever a game's throwable is) along the view this tick.
 var throw: bool = false
 
@@ -42,7 +46,8 @@ var state: StringName = &"roam"
 
 
 ## Copies the view, the movement and the movement buttons into [param command].
-func write_move(command: Object) -> void:
+## [param air_jump_button] is the constant name a game's air-jump uses, when it has one.
+func write_move(command: Object, air_jump_button: String = "") -> void:
 	if command == null:
 		return
 	command.set(&"yaw", yaw)
@@ -51,6 +56,8 @@ func write_move(command: Object) -> void:
 	_button(command, "BUTTON_CROUCH", crouch)
 	_button(command, "BUTTON_JUMP", jump)
 	_button(command, "BUTTON_WALK", walk)
+	if air_jump_button != "":
+		_button(command, air_jump_button, air_jump)
 
 
 ## Copies the view and the trigger into [param command]. [param throw_button] is the

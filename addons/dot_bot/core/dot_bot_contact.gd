@@ -31,6 +31,17 @@ var aim_height: float = 1.25
 var view_yaw: float = NAN
 var view_pitch: float = NAN
 
+## What the body is doing, for the tricks a bot chains. The defaults are a body on the ground
+## doing nothing special, which is what a game that does not fill them gets: no tricks start
+## from a state the game does not report.
+var grounded: bool = true
+var sliding: bool = false
+var wall_running: bool = false
+
+## Whether the game would honour an air-jump press now (the move is on and off cooldown).
+## The bot presses it only when this is true, so a game that has it disabled is never asked.
+var air_jump_ready: bool = false
+
 ## 0..1.
 var health: float = 1.0
 

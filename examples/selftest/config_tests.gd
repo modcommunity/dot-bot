@@ -1,4 +1,4 @@
-extends "res://examples/selftest/duel_tests.gd"
+extends "res://examples/selftest/trick_tests.gd"
 ## The profile, settings, cvar, console, names and roster sections of the bot suite.
 
 ## A command shaped like dot-player-controller's, for write_move.

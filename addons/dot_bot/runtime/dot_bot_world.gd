@@ -37,6 +37,11 @@ var line_of_sight_fn: Callable = Callable()
 ## [code]() -> PackedVector3Array[/code]: places worth walking to (spawns, objectives).
 var waypoints_fn: Callable = Callable()
 
+## [code](from: Vector3, dir: Vector3, reach: float) -> Dictionary[/code]: the nearest wall along
+## [param dir] (flat, unit) within [param reach] as `{normal, distance}`, or empty. The brain asks
+## it beside and ahead of a running bot to find a wall worth running along.
+var wall_fn: Callable = Callable()
+
 ## [code](shooter: DotBotContact) -> float[/code]: how fast what this body fires travels, m/s;
 ## 0 for hitscan. The brain leads a target by it.
 var projectile_speed_fn: Callable = Callable()
@@ -103,6 +108,10 @@ static func segment_hits_sphere(from: Vector3, to: Vector3, center: Vector3, rad
 	var len2 := d.length_squared()
 	var t := 0.0 if len2 < 0.000001 else clampf((center - from).dot(d) / len2, 0.0, 1.0)
 	return (from + d * t).distance_squared_to(center) <= radius * radius
+
+
+func wall_ahead(from: Vector3, dir: Vector3, reach: float) -> Dictionary:
+	return wall_fn.call(from, dir, reach) if wall_fn.is_valid() else {}
 
 
 func waypoints() -> PackedVector3Array:

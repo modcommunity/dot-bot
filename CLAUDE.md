@@ -29,6 +29,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_world.gd` | `DotBotWorld`: all a brain may know (bodies, line of sight, waypoints, sounds) |
 | `addons/dot_bot/runtime/dot_bot_aim.gd` | `DotBotAim`: the view, the aim error, the reaction and the trigger; the brain's, and a game with its own decisions uses it alone |
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
+| `addons/dot_bot/runtime/dot_bot_tricks.gd` | `DotBotTricks`: slide, slide-jump, wall run, wall jump, cover duck and the air-jump, by scenario and `bot_slide`, `bot_wall_run`, `bot_air_jump`, `bot_trick_chain`, `bot_trick_delay`, `bot_cover_crouch`; [design](docs/design.md#movement-tricks) |
 | `addons/dot_bot/runtime/dot_bot_roster.gd` | `DotBotRoster`: from the bots there are to the number wanted, named |
 | `addons/dot_bot/runtime/dot_bot_nav.gd`, `dot_bot_hiding.gd`, `dot_bot_search.gd` | for hiding games: a navigation mesh baked from a map's colliders; places scored by sight lines and picked apart; a seeker's memory of the places |
 | `addons/dot_bot/runtime/dot_bot_links.gd` | `DotBotLinks`: a converted map's teleports (one-way nav edges), lethal hurt volumes (carved out of the bake through `DotBotNav.avoid`) touch doors and the buttons/triggers that enable a disabled teleport (`gadgets`, `next_gadget`), read by duck typing from the map world |

@@ -134,6 +134,12 @@ game-hide-n-seek's `game/hs_bots.gd` is the worked example.
 | `bot_strafe` | 0.15 | 0.55 | 0.85 | 1 | 0 to 1 | Chance of strafing while fighting, per change of direction. |
 | `bot_strafe_time` | 1.5 | 0.9 | 0.6 | 0.45 | 0.1 to 5 | Average seconds between changes of strafe direction. |
 | `bot_stop_to_shoot` | 0 | 0.35 | 0.6 | 0.8 | 0 to 1 | Chance per engagement of standing still for long-range bursts. |
+| `bot_slide` | 0.02 | 0.15 | 0.45 | 0.75 | 0 to 1 | Chance per chance of sliding at a run: closing on a fight, chasing, breaking away. |
+| `bot_wall_run` | 0.03 | 0.12 | 0.4 | 0.7 | 0 to 1 | Chance of taking a wall it runs beside: a slide, a jump, and a run along it. |
+| `bot_air_jump` | 0 | 0.1 | 0.35 | 0.6 | 0 to 1 | Chance of using the air-jump to flee when hurt, or to reach a target above (only where the game has it on). |
+| `bot_trick_chain` | 0.05 | 0.25 | 0.55 | 0.85 | 0 to 1 | Chance one trick leads straight into the next (slide, jump, wall run, wall jump). |
+| `bot_trick_delay` | 0.6 | 0.35 | 0.2 | 0.1 | 0 to 2 | Seconds between seeing the chance for a trick and starting it. |
+| `bot_cover_crouch` | 0.05 | 0.3 | 0.5 | 0.6 | 0 to 1 | Chance of ducking in cover when pulling back or waiting out a lost target. |
 | `bot_peek` | 0 | 0.3 | 0.7 | 0.9 | 0 to 1 | Chance of pre-aiming and re-peeking where a target was lost. |
 | `bot_crouch` | 0 | 0.1 | 0.25 | 0.3 | 0 to 1 | Chance per engagement of crouching for long-range fire. |
 | `bot_jump` | 0 | 0.05 | 0.15 | 0.2 | 0 to 2 | Jumps per second while fighting up close. |

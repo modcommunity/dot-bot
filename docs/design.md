@@ -52,6 +52,10 @@ The view, the aim error, the reaction and the trigger are `DotBotAim`, which the
 
 With the server's `sv_ballistics` on, a bullet drops and takes time to arrive, and a hitscan aim misses. `DotBotAim.aim_solver` is an optional callable `func(eye, point, velocity) -> Vector3` that `track` uses in place of the plain lead; unset (the default) changes nothing. `DotBotAimSolver.solve(muzzle, target, velocity, tuning)` is a ready one: it iterates flight time and bore pitch a few times, reads `muzzle_velocity`, `bullet_gravity` and `drag` off the tuning by duck typing (a dot-weapon `DotWeaponBallistics`, or a dictionary), and returns the plain point when there is no tuning or no solution. dot-bot does not depend on dot-weapon.
 
+## Movement tricks
+
+`DotBotTricks` (held by the brain as `tricks`) adds the slide, the slide-jump, the wall run with its wall jump, the duck in cover and the air-jump to an intent. It only presses buttons a person could, so the motor refuses what the body cannot do, and a game that has a trick off is never told its precondition (`DotBotContact.air_jump_ready` is the game's, filled each tick). The scenario (close, chase, flee, cover, roam) weights the dice; `bot_slide`, `bot_wall_run`, `bot_air_jump`, `bot_cover_crouch` say how often, `bot_trick_chain` how well one leads into the next and `bot_trick_delay` how long it takes to start. A wall run needs the slide's boost for its speed, so the chain is slide, jump, touch the wall, wall jump. Walls are found with `DotBotWorld.wall_ahead` (a game sets `wall_fn`); with none, no wall run is tried. Not done: ledges and gaps are not detected, the air-jump only reaches a target well above.
+
 ## Presets and overrides
 
 `DotBotProfile.SPEC` is the one table: per setting its range, its value in each of the four presets, and its help line. `DotBotSettings` holds one game's live profile and its overrides:

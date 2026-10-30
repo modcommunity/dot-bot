@@ -67,6 +67,12 @@ const SPEC := [
 	["peek", 0.0, 1.0, 0.0, 0.3, 0.7, 0.9, "Chance of pre-aiming and re-peeking where a target was lost."],
 	["crouch", 0.0, 1.0, 0.0, 0.1, 0.25, 0.3, "Chance per engagement of crouching for long-range fire."],
 	["jump", 0.0, 2.0, 0.0, 0.05, 0.15, 0.2, "Jumps per second while fighting up close."],
+	["slide", 0.0, 1.0, 0.02, 0.15, 0.45, 0.75, "Chance per chance of sliding at a run: closing on a fight, chasing, breaking away."],
+	["wall_run", 0.0, 1.0, 0.03, 0.12, 0.4, 0.7, "Chance of taking a wall it runs beside: a slide, a jump, and a run along it."],
+	["air_jump", 0.0, 1.0, 0.0, 0.1, 0.35, 0.6, "Chance of using the air-jump to flee when hurt, or to reach a target above (only where the game has it on)."],
+	["trick_chain", 0.0, 1.0, 0.05, 0.25, 0.55, 0.85, "Chance one trick leads straight into the next (slide, jump, wall run, wall jump)."],
+	["trick_delay", 0.0, 2.0, 0.6, 0.35, 0.2, 0.1, "Seconds between seeing the chance for a trick and starting it."],
+	["cover_crouch", 0.0, 1.0, 0.05, 0.3, 0.5, 0.6, "Chance of ducking in cover when pulling back or waiting out a lost target."],
 	["map_knowledge", 0.0, 1.0, 0.1, 0.4, 0.7, 1.0, "Chance a roaming bot heads where it last knew of an enemy instead of anywhere."],
 	# Humanisation: every one is 0 for the old, exact behaviour.
 	["react_jitter", 0.0, 2.0, 0.5, 0.3, 0.3, 0.25, "How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way)."],
@@ -123,6 +129,12 @@ const COL_HELP := 7
 @export var peek: float = 0.3
 @export var crouch: float = 0.1
 @export var jump: float = 0.05
+@export var slide: float = 0.15
+@export var wall_run: float = 0.12
+@export var air_jump: float = 0.1
+@export var trick_chain: float = 0.25
+@export var trick_delay: float = 0.35
+@export var cover_crouch: float = 0.3
 @export var map_knowledge: float = 0.4
 
 @export_group("Humanisation")

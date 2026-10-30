@@ -71,6 +71,11 @@ var _roll_stop: bool = false
 var _roll_crouch: bool = false
 var _roll_cover: bool = false
 
+## Slide, wall run and the rest; the scenario and the target's height over the bot are set by whichever of fight, search, listen or roam ran this tick.
+var tricks := DotBotTricks.new()
+var _scene: StringName = &"roam"
+var _scene_up: float = 0.0
+
 var _last_seen_pos: Vector3 = Vector3.INF
 var _last_seen_vel: Vector3 = Vector3.ZERO
 var _last_seen_at: float = -INF
@@ -132,6 +137,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	if me == null or not me.alive:
 		_was_alive = false
 		_forget_target()
+		tricks.reset()
 		out.state = &"dead"
 		out.yaw = aim.yaw
 		out.pitch = aim.pitch
@@ -165,6 +171,8 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	if world != null:
 		_hear(me, all, world, p, now)
 
+	_scene = &"roam"
+	_scene_up = 0.0
 	if seen != null:
 		_fight(me, seen, world, p, now, dt, out)
 	elif _last_seen_pos != Vector3.INF and now - _last_seen_at <= _hold_time(p, _peeking or _chase_lost):
@@ -176,6 +184,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 
 	out.yaw = aim.yaw
 	out.pitch = aim.pitch
+	tricks.apply(me, world, p, _rng, _scene, _scene_up, aim.yaw, now, dt, out)
 	out.target_id = target_id if _visible else -1
 	out.ride = _ride_reached
 	_ride_reached = -1
@@ -371,6 +380,8 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 	if retreat:
 		forward = -1.0
 	out.state = &"retreat" if retreat else &"fight"
+	_scene = &"flee" if retreat else (&"close" if dist > p.range * 1.3 else &"fight")
+	_scene_up = c.position.y - me.position.y
 
 	if now >= _strafe_until:
 		_strafe = (1.0 if _rng.next_unit() < 0.5 else -1.0) if _rng.next_unit() < p.strafe else 0.0
@@ -406,6 +417,7 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 
 func _search(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	out.state = &"search"
+	_scene = &"cover" if _peeking else &"chase"
 	var since := now - _lost_at
 	# Where it went, as far as the bot can guess: along the way it was moving, for a moment.
 	var guess := _last_seen_pos + _last_seen_vel * minf(since, 1.0) * p.prediction * 0.5
@@ -438,6 +450,7 @@ func _search(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: Do
 
 func _listen(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	out.state = &"listen"
+	_scene = &"chase" if _chase_sound else &"cover"
 	var at := _hurt_from if _hurt_at >= _heard_at else _heard_pos
 	if at == Vector3.INF:
 		return
