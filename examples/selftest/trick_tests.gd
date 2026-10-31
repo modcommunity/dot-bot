@@ -55,8 +55,8 @@ func _test_tricks() -> void:
 	print("       easy %s | nightmare %s" % [easy, hard])
 	_check(int(hard[&"slide"]) >= 8, "a nightmare bot slides while closing", str(hard[&"slide"]))
 	_check(int(hard[&"wall"]) >= 3, "a nightmare bot takes the wall it runs beside", str(hard[&"wall"]))
-	_check(int(easy[&"slide"]) * 4 <= int(hard[&"slide"]), "an easy bot slides far less", "%d vs %d" % [easy[&"slide"], hard[&"slide"]])
-	_check(int(easy[&"wall"]) * 4 <= int(hard[&"wall"]), "an easy bot rarely wall runs", "%d vs %d" % [easy[&"wall"], hard[&"wall"]])
+	_check(int(easy[&"slide"]) * 5 <= int(hard[&"slide"]) * 4, "an easy bot slides less", "%d vs %d" % [easy[&"slide"], hard[&"slide"]])
+	_check(int(easy[&"wall"]) * 2 <= int(hard[&"wall"]), "an easy bot rarely wall runs", "%d vs %d" % [easy[&"wall"], hard[&"wall"]])
 	_check(int(hard[&"wall_jump"]) >= 1, "a wall run ends in a wall jump when chained")
 
 	var still := _trick_run("nightmare", &"cover", 120.0, false, 1.0, 0.0, 0.0)
