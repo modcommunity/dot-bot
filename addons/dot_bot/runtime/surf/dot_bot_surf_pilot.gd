@@ -84,6 +84,8 @@ const STRIDE := 7
 
 ## How far (metres, and m/s) the real state may be from the forecast and still be it.
 const FORECAST_SLACK := 0.01
+## Simulator steps a veto spends in all (eight futures), for its latency estimate.
+const VETO_STEPS := 2000
 ## The fewest ticks between two fresh forecasts. A bot whose game turns its keys for its own view
 ## walks off the forecast on the ground every tick (a backward key is slower there), and a fresh
 ## 192-tick forecast every tick was half a core (game-arena, 2026-10-13).
@@ -117,9 +119,9 @@ var rolling: bool = true
 ## Most simulator steps one tick spends on a fresh forecast (0 = all of it in one tick). The rest
 ## resumes on the next ticks and the veto is judged once the forecast completes.
 var forecast_budget: int = 24
-## The same for a veto (up to eight futures, about 2,000 steps). 0 by default: a spread veto answers
-## late, and long surf rides in game-arena stopped landing at 256 steps a tick.
-var veto_budget: int = 0
+## The same for a veto (up to eight futures, about 2,000 steps, ~300 ms in one tick). The veto starts
+## the ticks it will be late ahead of the real state; 0 runs it all in one tick.
+var veto_budget: int = 48
 
 ## Statistics: futures run afresh, vetoes taken, how many of those found no way out, and how
 ## often a kept forecast stopped matching.
@@ -509,6 +511,8 @@ func _veto(state: Variant) -> void:
 	vetoes += 1
 	_vt_pending = true
 	_vt_state = state.duplicate_state()
+	if veto_budget > 0:
+		_advance_for_latency(_vt_state)
 	_vt_a = 0
 	_vt_s = null
 	_vt_best = -1
@@ -516,6 +520,16 @@ func _veto(state: Variant) -> void:
 	_vt_longest = -1
 	_vt_longest_t = -1.0
 	_veto_run()
+
+
+## A spread veto answers about VETO_STEPS / [member veto_budget] ticks late, so it starts that many
+## ticks ahead (the held action, then the policy) and its answer fits the state it lands on.
+func _advance_for_latency(s: Variant) -> void:
+	var late := mini(ceili(float(VETO_STEPS) / float(veto_budget)), check_every)
+	for i in late:
+		var a := _override if i < _override_left else policy(s)
+		if sim.step(s, command_for(sim, a, s, reference_yaw)) != DotBotSurfCourse.EVENT_NONE:
+			return
 
 
 ## A veto, then the forecast again from its action; with the veto unfinished the forecast waits for it.

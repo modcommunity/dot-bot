@@ -204,14 +204,20 @@ func _surf_forecast(pilot: DotBotSurfPilot, sim: ToySim, tries: Array) -> void:
 		steps_ok = steps_ok and calls == ceili(float(whole_n) / 7.0)
 	var veto_same := 0
 	for s: ToyState in tries:
+		pilot.veto_budget = 5
+		pilot._override = -2
+		pilot._override_left = 0
+		var ahead: ToyState = s.duplicate_state()
+		pilot._advance_for_latency(ahead)
 		pilot.veto_budget = 0
 		pilot._hopeless_streak = 0
-		pilot._veto(s)
+		pilot._veto(ahead)
 		var whole_action: int = pilot._override
 		var whole_wait: int = pilot._cooldown
 		pilot.veto_budget = 5
 		pilot._hopeless_streak = 0
 		pilot._override = -2
+		pilot._override_left = 0
 		pilot._veto(s)
 		var veto_calls := 1
 		while pilot._vt_pending:
@@ -223,7 +229,7 @@ func _surf_forecast(pilot: DotBotSurfPilot, sim: ToySim, tries: Array) -> void:
 	pilot._drop_forecast()
 	_check(same == tries.size(), "a forecast spread over ticks ends where an all-at-once one does, with the same event", "%d of %d" % [same, tries.size()])
 	_check(steps_ok, "and takes no more steps a tick than its budget")
-	_check(veto_same == tries.size(), "and a veto spread over ticks picks the action and the wait an all-at-once one does", "%d of %d" % [veto_same, tries.size()])
+	_check(veto_same == tries.size(), "and a veto spread over ticks picks the action and the wait an all-at-once one from the state it is late by does", "%d of %d" % [veto_same, tries.size()])
 
 
 static func _wish(view_yaw: float, move: Vector2) -> Vector3:
