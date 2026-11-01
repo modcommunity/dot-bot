@@ -13,7 +13,7 @@ extends RefCounted
 
 const CHANNEL := "dot.bot"
 
-## Flat speed below which no slide or wall run is tried: the motor needs about this much.
+## Default flat speeds below which no slide or wall run is tried: the motor needs about this much.
 const SLIDE_SPEED := 6.5
 const WALL_RUN_SPEED := 9.5
 
@@ -32,6 +32,10 @@ enum Phase { IDLE, SLIDE_WAIT, SLIDING, AIR, RIDE }
 
 ## How many of each the bot started, for describe() and a suite.
 var counts: Dictionary = {&"slide": 0, &"hop": 0, &"wall": 0, &"wall_jump": 0, &"crouch": 0, &"air_jump": 0}
+
+## Per-game speeds, set from the motor's slide and wall-run minimums (a slower run needs lower gates).
+var slide_speed: float = SLIDE_SPEED
+var wall_run_speed: float = WALL_RUN_SPEED
 
 var _phase: Phase = Phase.IDLE
 var _at: float = 0.0
@@ -110,7 +114,7 @@ func _air_jump(me: DotBotContact, p: DotBotProfile, rng: DotRandomStream, scenar
 
 ## Looks for a chance to start a slide, a slide-jump or a wall run.
 func _look(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, rng: DotRandomStream, scenario: StringName, heading: Vector2, speed: float, now: float) -> void:
-	if not me.grounded or speed < SLIDE_SPEED or not WEIGHTS.has(scenario):
+	if not me.grounded or speed < slide_speed or not WEIGHTS.has(scenario):
 		return
 	var weight: float = WEIGHTS[scenario]
 	var wall := Vector3.ZERO
@@ -158,7 +162,7 @@ func _step(me: DotBotContact, p: DotBotProfile, rng: DotRandomStream, heading: V
 		Phase.SLIDE_WAIT:
 			if now < _at:
 				return
-			if not me.grounded or speed < SLIDE_SPEED or _was_crouch:
+			if not me.grounded or speed < slide_speed or _was_crouch:
 				_end(now)
 				return
 			out.crouch = true
