@@ -49,6 +49,11 @@ const RETREAT_HEALTH := 0.35
 ## Seconds a bot that is not going after a sound or a lost target spends looking toward it.
 const GLANCE := 1.2
 
+## How long a line-of-sight answer for one target is reused, seconds. Sight is the dearest part of
+## a tick (up to two ray casts per enemy in the cone), and a person's eyes do not change their
+## mind about a doorway in 40 ms either.
+const SIGHT_REUSE := 0.045
+
 ## Longest gap between thinks that is integrated as one step, seconds.
 const MAX_STEP := 0.25
 
@@ -67,6 +72,9 @@ var last: DotBotIntent = null
 # The target, as perceived.
 var target_id: int = -1
 var _visible: bool = false
+
+## Per target id: [time asked, answer] of the last line-of-sight test, see [constant SIGHT_REUSE].
+var _sight_cache: Dictionary = {}
 var _roll_stop: bool = false
 var _roll_crouch: bool = false
 var _roll_cover: bool = false
@@ -282,7 +290,7 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 		if off > half and d > CLOSE_NOTICE and not tracking:
 			continue
 		if p.through_walls < 0.5 and world != null:
-			if not world.line_of_sight(eye, c.aim_point()) and not world.line_of_sight(eye, c.eye()):
+			if not _sees(world, eye, c, now):
 				continue
 		var score := d * (1.0 + off / 60.0)
 		if c.id == target_id and _visible:
@@ -314,6 +322,17 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	_last_seen_at = now
 	_known_enemy = chosen.position
 	return chosen
+
+
+## Whether [param c] is in line of sight from [param eye]: the chest or the head, reused for [constant SIGHT_REUSE].
+func _sees(world: DotBotWorld, eye: Vector3, c: DotBotContact, now: float) -> bool:
+	var stamp := world.sight_stamp()
+	var held: Variant = _sight_cache.get(c.id)
+	if held is Array and (held as Array)[2] == stamp and now >= (held as Array)[0] and now - (held as Array)[0] < SIGHT_REUSE:
+		return (held as Array)[1]
+	var seen := world.line_of_sight(eye, c.aim_point()) or world.line_of_sight(eye, c.eye())
+	_sight_cache[c.id] = [now, seen, stamp]
+	return seen
 
 
 func _lose(p: DotBotProfile, now: float) -> void:

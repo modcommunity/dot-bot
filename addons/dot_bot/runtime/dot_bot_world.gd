@@ -85,6 +85,11 @@ func line_of_sight(from: Vector3, to: Vector3) -> bool:
 	return bool(line_of_sight_fn.call(from, to)) if line_of_sight_fn.is_valid() else true
 
 
+## Changes whenever a sight blocker is added or removed, so cached sight results can be dropped.
+func sight_stamp() -> int:
+	return _blocker_seq * 4096 + sight_blockers.size()
+
+
 ## Blocks sight through a sphere until [param until] (game time); returns an id for [method remove_sight_blocker].
 func add_sight_blocker(center: Vector3, radius: float, until: float) -> int:
 	_blocker_seq += 1
