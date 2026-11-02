@@ -28,5 +28,6 @@ extends RefCounted
 # 9: ladders: DotBotLinks.ladders / ladder_of, DotBotWorld.ladder_fn (a game assigns links.ladder_of).
 # 10: DotBotLinks.link_ladders (boxes and a nav in, links out; assign its ladder_of to ladder_fn).
 # 11: DotBotClimb (one ladder ride as a step function; the brain uses it, a game steering its own stand-ins can too).
-const LEVEL := 11
+# 12: DotBotUnstick (no-progress detection and escalation, in the brain for every state); DotBotWorld.walkable_fn and walkable_near.
+const LEVEL := 12
 const OLDEST := 1

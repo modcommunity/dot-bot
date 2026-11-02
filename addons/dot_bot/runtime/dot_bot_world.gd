@@ -59,6 +59,9 @@ var route_fn: Callable = Callable()
 ## ([member DotBotIntent.ride]); the game rides it.
 var route_detail_fn: Callable = Callable()
 
+## [code](at: Vector3) -> Vector3[/code]: the nearest point a body can stand on (the navigation mesh's closest), or unset. A bot that cannot get free of a corner is nudged toward it.
+var walkable_fn: Callable = Callable()
+
 ## [code]drops_fn.call() -> Array[Dictionary][/code]: the weapons lying about, each
 ## [code]{id, position, slot, value, ammo}[/code] (value and ammo as in [member DotBotContact.loadout]).
 ## Unset: none, and no bot goes for one.
@@ -126,6 +129,11 @@ func drops() -> Array:
 
 func wall_ahead(from: Vector3, dir: Vector3, reach: float) -> Dictionary:
 	return wall_fn.call(from, dir, reach) if wall_fn.is_valid() else {}
+
+
+## The nearest standable point to [param at], or [constant Vector3.INF] when the game has none.
+func walkable_near(at: Vector3) -> Vector3:
+	return walkable_fn.call(at) if walkable_fn.is_valid() else Vector3.INF
 
 
 func waypoints() -> PackedVector3Array:

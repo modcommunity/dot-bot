@@ -38,6 +38,7 @@ func _run() -> void:
 	_test_duels()
 	_test_hiding()
 	_test_search()
+	_test_unstick()
 	_test_route()
 	await _test_nav()
 	_test_surf()
@@ -376,6 +377,34 @@ func _test_hiding() -> void:
 	_check(none.is_empty(), "and nothing when nothing is reachable")
 	var away := DotBotHiding.flee_spot(spots, Vector3(0.5, 0.0, -2.5), Vector3(-3.0, 0.0, -3.0), Vector3(-3.0, 1.6, -3.0), _wall_los, PackedVector3Array(), 25.0, 2.0)
 	_check(not away.is_empty() and (away["at"] as Vector3).x > 0.0, "running from a seeker goes behind the wall, not past it")
+	_done()
+
+
+func _test_unstick() -> void:
+	_section("unstick: pushing without moving escalates, moving clears it")
+	var world := DotBotWorld.new()
+	world.walkable_fn = func(_at: Vector3) -> Vector3: return Vector3(5.0, 0.0, 0.0)
+	var un := DotBotUnstick.new(DotRandomStream.new(1))
+	var t := 0.0
+	var saw_nudge := false
+	var saw_crouch := false
+	for i in 400:
+		t += 1.0 / 64.0
+		un.step(Vector3.ZERO, true, t, world)
+		saw_nudge = saw_nudge or un.nudge_to == Vector3(5.0, 0.0, 0.0)
+		saw_crouch = saw_crouch or un.crouch
+	_check(un.level >= DotBotUnstick.NUDGE_LEVEL, "six seconds against a wall reach the nudge level", str(un.level))
+	_check(saw_nudge and saw_crouch, "the nudge heads for the nearest standable point and the crouch-hop came first")
+	var x := 0.0
+	for i in 200:
+		t += 1.0 / 64.0
+		x += 0.05
+		un.step(Vector3(x, 0.0, 0.0), true, t, world)
+	_check(un.level == 0, "walking free clears it", str(un.level))
+	var idle := DotBotUnstick.new()
+	for i in 400:
+		idle.step(Vector3.ZERO, false, float(i) / 64.0, world)
+	_check(idle.level == 0, "standing still on purpose is not stuck")
 	_done()
 
 

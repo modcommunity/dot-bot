@@ -124,8 +124,7 @@ var _route_goal: Vector3 = Vector3.INF
 var _ride_reached: int = -1
 # The ladder being climbed, or null.
 var _climb: DotBotClimb = null
-var _stuck_at: float = 0.0
-var _stuck_from: Vector3 = Vector3.INF
+var _unstick: DotBotUnstick = null
 
 var _now: float = NAN
 var _was_alive: bool = true
@@ -137,6 +136,7 @@ func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
 	settings = p_settings if p_settings != null else DotBotSettings.new()
 	aim = DotBotAim.new(p_id, settings)
 	_rng = DotRandomStream.new(p_id).stream(&"dot_bot")
+	_unstick = DotBotUnstick.new(_rng)
 
 
 ## What this bot does this tick.
@@ -203,6 +203,9 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	out.target_id = target_id if _visible else -1
 	if _climb != null:
 		_climb_step(me, now, out)
+		_unstick.reset(me.position, now)
+	else:
+		_free_if_stuck(me, world, now, out)
 	out.ride = _ride_reached
 	_ride_reached = -1
 	last = out
@@ -216,7 +219,7 @@ func ride_ended(_arrived: bool) -> void:
 	_route_goal = Vector3.INF
 	_route = PackedVector3Array()
 	_route_rides = PackedInt32Array()
-	_stuck_from = Vector3.INF
+	_unstick.reset()
 
 
 ## How long a lost target or a sound holds the bot's attention: its whole memory when it is
@@ -521,15 +524,6 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 	aim.turn_to(look, dt)
 	_set_move(out, dir)
 
-	# Stuck against something: hop, and go somewhere else.
-	if now - _stuck_at >= 1.5:
-		if _stuck_from != Vector3.INF and me.position.distance_to(_stuck_from) < 0.75:
-			out.jump = true
-			_waypoint = Vector3.INF
-			_route_goal = Vector3.INF
-		_stuck_at = now
-		_stuck_from = me.position
-
 
 ## True when a weapon on the floor has this tick: walk to it, look at it, press use near it.
 func _fetch(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> bool:
@@ -601,6 +595,24 @@ func _toward(me: DotBotContact, world: DotBotWorld, goal: Vector3) -> Vector2:
 	var at := _route[0] if not _route.is_empty() else goal
 	var flat := Vector2(at.x, at.z) - here
 	return flat.normalized() if flat.length() > 0.01 else Vector2.ZERO
+
+## A bot that pushes and does not move, in any state: re-plan, hop, crouch-hop and side-step, then walk to the nearest standable point.
+func _free_if_stuck(me: DotBotContact, world: DotBotWorld, now: float, out: DotBotIntent) -> void:
+	# A duel strafes on the spot by design; only travelling can be stuck.
+	var pushing := out.move.length() > 0.3 and out.state != &"dead" and out.state != &"fight" and out.state != &"retreat"
+	if _unstick.step(me.position, pushing, now, world) == 0:
+		return
+	if _unstick.replan:
+		_waypoint = Vector3.INF
+		_route_goal = Vector3.INF
+	out.jump = out.jump or _unstick.jump
+	out.crouch = out.crouch or _unstick.crouch
+	if _unstick.strafe != 0.0:
+		out.move = Vector2(_unstick.strafe, out.move.y).limit_length(1.0)
+	if _unstick.nudge_to != Vector3.INF:
+		var d := Vector2(_unstick.nudge_to.x, _unstick.nudge_to.z) - Vector2(me.position.x, me.position.z)
+		if d.length() > 0.01:
+			_set_move(out, d.normalized())
 
 
 ## Overrides this tick's legs while a ladder is climbed; the view and trigger stay the brain's.
