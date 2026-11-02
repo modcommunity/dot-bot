@@ -38,6 +38,9 @@ extends RefCounted
 ## intent.write_fire(fire_command)
 ## [/codeblock]
 
+## A hunting bot heads for the place nearest its prey, or the prey itself if no place is this close.
+const HUNT_PLACE_NEAR := 6.0
+
 const CHANNEL := "dot.bot"
 
 ## Within this distance a body is noticed whatever way the bot faces: somebody touching you.
@@ -592,7 +595,8 @@ func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> 
 			for point in far:
 				if point.distance_to(prey) < near.distance_to(prey):
 					near = point
-			return near
+			# A sparse mesh leaves the nearest place far from the prey; walk at the prey then.
+			return near if near.distance_to(prey) <= HUNT_PLACE_NEAR else prey
 	return far[_rng.next_range_i(0, far.size() - 1)]
 
 
