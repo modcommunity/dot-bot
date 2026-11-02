@@ -3,14 +3,14 @@ extends "res://examples/selftest/config_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 320
+const CHECKS := 324
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 36
+const SECTIONS := 37
 
 
 func _ready() -> void:
@@ -44,6 +44,7 @@ func _run() -> void:
 	_test_surf()
 	await _test_ride_edges()
 	await _test_links()
+	await _test_stitches()
 	await _test_unlock_export()
 	await _test_ladders()
 	await _test_kill_avoidance()
@@ -158,6 +159,26 @@ func _floors(centres: Array, size: Vector3) -> Array:
 		still.add_child(shape)
 	await get_tree().physics_frame
 	return [root, still]
+
+
+## find_stitches joins islands a jump crosses and leaves a wide gap or a tall rise alone.
+func _test_stitches() -> void:
+	_section("stitches: a jumpable gap between islands is joined, an impossible gap or rise is not")
+	var cases := [
+		["near", Vector3(11.0, 0.0, 0.0), true],
+		["wide gap", Vector3(13.0, 0.0, 0.0), false],
+		["tall rise", Vector3(11.0, 1.2, 0.0), false],
+		["low rise", Vector3(10.6, 0.5, 0.0), true],
+	]
+	for c: Array in cases:
+		var made := await _floors([Vector3.ZERO, c[1]], Vector3(10.0, 0.0, 10.0))
+		var nav := DotBotNav.new()
+		var baked := nav.bake(made[0], {"radius": 0.35, "height": 1.0, "climb": 0.4}, 0, [made[1]])
+		var count := nav.find_stitches(DotBotLinks.STITCH_ID)
+		_check(baked.ok and (count > 0) == c[2], "stitch %s: %s" % [c[0], "joined" if c[2] else "left apart"], str(count))
+		nav.clear()
+		made[0].queue_free()
+	_done()
 
 
 ## Teleports and touch doors read from a map's entities; a teleport is an edge the path crosses.

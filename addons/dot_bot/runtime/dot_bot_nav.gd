@@ -372,8 +372,9 @@ func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 1.5, limit:
 	return _find_edges(first_id, reaches, -0.9, 24.0, spacing, limit, cost, true)
 
 
-## Joins neighbouring islands where their rims come within [param max_gap] metres sideways: the lower rim climbs at most [param max_rise] to the higher, the higher drops to the lower, and a chest-high ray between them is clear. One pair of edges per pair of islands (the closest), at most [param limit] edges; returns how many. Hops only look off rims of one island at a time along one heading, so small islands beside a main one stayed apart.
-func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 1.2, limit: int = 600, cost: float = 3.0) -> int:
+## Joins neighbouring islands where their rims come within [param max_gap] metres sideways: the lower rim climbs at most [param max_rise] to the higher, the higher drops to the lower, and a chest-high ray between them is clear.
+## Defaults are a jump's reach: [param max_rise] 0.9 is what find_hops lands on, and the gap allowed shrinks linearly to half of [param max_gap] at that rise, since the apex is spent climbing. A wider or higher pair is left unlinked (a bot wedges at a rim it cannot cross). Rims closer than 0.5 m sideways drop at any height. One pair of edges per pair of islands (the closest), at most [param limit] edges; returns how many. Hops only look off rims of one island at a time along one heading, so small islands beside a main one stayed apart.
+func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, limit: int = 600, cost: float = 3.0) -> int:
 	if not is_ready():
 		return 0
 	var all := islands()
@@ -417,7 +418,7 @@ func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 1.2, l
 						continue
 					var flat := Vector2(v.x - w.x, v.z - w.z).length()
 					var dy := absf(v.y - w.y)
-					if flat > max_gap or dy > 24.0 or (dy > max_rise and flat > 0.5):
+					if flat > max_gap * (1.0 - 0.5 * minf(dy / max_rise, 1.0)) or dy > 24.0 or (dy > max_rise and flat > 0.5):
 						continue
 					var score := flat + dy
 					var pair := Vector2i(a, b)

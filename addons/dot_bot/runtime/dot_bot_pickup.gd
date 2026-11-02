@@ -1,12 +1,8 @@
 class_name DotBotPickup
 extends RefCounted
 
-## A quiet bot with a worse or empty weapon, or low ammunition, notices a better one lying about,
-## walks to it and presses the use key. Pure like the brain: it returns what to do, the game's
-## own use path (hold to swap) does the taking, so nothing is teleported.
-##
-## Which weapon is better is the game's rating ([member DotBotContact.loadout], [method DotBotWorld.drops]);
-## a game with its own idea of a goal subclasses and overrides [method gain].
+## A quiet bot with a worse or empty weapon, or low ammo, notices a better one, walks to it and presses the use key; it returns what to do and the game's own use path does the taking.
+## Better is the game's rating ([member DotBotContact.loadout], [method DotBotWorld.drops]); a game with its own idea of a goal overrides [method gain].
 
 const CHANNEL := "dot.bot"
 

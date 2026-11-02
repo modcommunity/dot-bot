@@ -42,10 +42,8 @@ var wall_running: bool = false
 ## The bot presses it only when this is true, so a game that has it disabled is never asked.
 var air_jump_ready: bool = false
 
-## What the body carries, by the game's slot number: [code]{value: float, ammo: float}[/code], the
-## game's rating of the weapon (0..1, higher is better) and its ammunition as a fraction of full.
-## A slot not listed is empty. Read by [DotBotPickup]; a game that never fills it has bots that
-## take nothing off the floor.
+## What the body carries, by the game's slot number: [code]{value: float, ammo: float}[/code], the game's rating of the weapon (0..1) and its ammo as a fraction of full.
+## An unlisted slot is empty. Read by [DotBotPickup]; a game that never fills it has bots that take nothing off the floor.
 var loadout: Dictionary = {}
 
 ## 0..1.
