@@ -46,6 +46,22 @@ A staged map's pits sit right under its ramps, so a line that leaves the ramp di
 
 `DotBotNav` leaves every surf ramp out (a face steeper than the slope limit is never ground), so a combat surf map bakes as islands. `add_ride(from, to, id)` is a one-way navigation link between two islands; `route` returns the corners and, per corner, the ride that starts there; `islands()` and `island_at()` are what a tool builds its edges from. Links are kept across a re-bake.
 
+## The pilot
+
+The class comment of `DotBotSurfPilot`, as it was before it was shortened.
+
+Rides a surf ramp from what [DotBotSurfPlanner] found: it does what the nearest remembered state did, and looks a second and a half ahead before trusting that.
+
+**The cache is rides.** Every tick of every ride the planner found (from perturbed starts, and again from wherever an earlier pilot failed) is an entry: position, velocity, the action taken. `nearest` finds the entry closest to the bot's own state -- position, plus velocity times `VELOCITY_SECONDS`, so a state going the wrong way is far from one going the right way at the same place.
+
+**Copying the nearest action, once the cache is dense; tracking while it is not.** By default the bot takes the nearest entry's action (`policy`): one grid lookup a tick. With only the rides searched from the starts that arrived from 15 to 25% of perturbed starts on game-g2gfast's surf_beginner, because an action is only right for the state it was taken from. `tracking` fixes that for a sparse cache: every `track_every` ticks it tries each action on the simulator and takes the one ending nearest where the remembered ride was that many ticks later, keeping to one ride (`_follow`); 50 to 80%. Once the repair rounds have filled the cache copying beats tracking (92% against 72% of fifty starts) at half the cost. The study is game-dev/docs/surf-bots-study.md.
+
+**The veto.** The pilot runs its own policy `horizon` ticks ahead on the simulator. If that future ends in a pit or below the course, it tries every action held for `check_every` ticks and then the policy, and holds the one whose future survives with the best score. A launch that is going to fall short is decided long before it falls: at 96 ticks, 118 of 119 vetoes found no action that survived; 192 finds them.
+
+**The future is kept, not recomputed** (`rolling`, on by default). The simulator is the motor, so while the bot's real state is the state the future predicted for this tick, everything after it is still exactly what was simulated, and the only new tick to look at is one more at the far end. A ride that goes as foreseen then costs one motor tick a ridden tick (the far end) instead of `horizon` every `check_every` (eight at the defaults); a ride that is pushed off the forecast (another player, a booster the simulation did not run, a view the game rotated) recomputes it. Off, the future is run afresh every `check_every` ticks, which is what the study measured.
+
+**A simulator is duck typed** (dot-player-controller's `DotFpsSimulator`): `step(state, command) -> int`, `command(yaw, move, jump)`, `delta`. States are its states: `position`, `velocity`, `duplicate_state()`. So this addon names no other.
+
 ## Traps
 
 - **`(dict[key] as PackedInt32Array).append(i)` appends to a copy.** The prototype built its lookup grid that way, so the grid was always empty and every lookup scanned every entry. Append through the dictionary (`dict[key].append(i)`) or a typed local.

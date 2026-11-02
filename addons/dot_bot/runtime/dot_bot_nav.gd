@@ -383,7 +383,7 @@ func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, l
 	for i in range(mesh.get_polygon_count()):
 		var polygon := mesh.get_polygon(i)
 		for k in polygon.size():
-			var key := _edge_key(_vertex_key(vertices[polygon[k]]), _vertex_key(vertices[polygon[(k + 1) % polygon.size()]]))
+			var key := DotBotNavGeometry.edge_key(DotBotNavGeometry.vertex_key(vertices[polygon[k]]), DotBotNavGeometry.vertex_key(vertices[polygon[(k + 1) % polygon.size()]]))
 			uses[key] = uses.get(key, 0) + 1
 	var grid := {}
 	var rim: Array = []
@@ -393,7 +393,7 @@ func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, l
 		for k in polygon.size():
 			var pa := vertices[polygon[k]]
 			var pb := vertices[polygon[(k + 1) % polygon.size()]]
-			if uses.get(_edge_key(_vertex_key(pa), _vertex_key(pb)), 0) != 1:
+			if uses.get(DotBotNavGeometry.edge_key(DotBotNavGeometry.vertex_key(pa), DotBotNavGeometry.vertex_key(pb)), 0) != 1:
 				continue
 			# two points per rim edge, so a long wall of mesh still has candidates along it
 			for p: Vector3 in [pa, pa.lerp(pb, 0.5)]:
@@ -454,9 +454,9 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 	for i in range(mesh.get_polygon_count()):
 		var polygon := mesh.get_polygon(i)
 		for k in polygon.size():
-			var a := _vertex_key(vertices[polygon[k]])
-			var b := _vertex_key(vertices[polygon[(k + 1) % polygon.size()]])
-			var key := _edge_key(a, b)
+			var a := DotBotNavGeometry.vertex_key(vertices[polygon[k]])
+			var b := DotBotNavGeometry.vertex_key(vertices[polygon[(k + 1) % polygon.size()]])
+			var key := DotBotNavGeometry.edge_key(a, b)
 			uses[key] = uses.get(key, 0) + 1
 	var seen := {}
 	var added := 0
@@ -469,9 +469,9 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 		for k in polygon.size():
 			var pa := vertices[polygon[k]]
 			var pb := vertices[polygon[(k + 1) % polygon.size()]]
-			var a := _vertex_key(pa)
-			var b := _vertex_key(pb)
-			var key := _edge_key(a, b)
+			var a := DotBotNavGeometry.vertex_key(pa)
+			var b := DotBotNavGeometry.vertex_key(pb)
+			var key := DotBotNavGeometry.edge_key(a, b)
 			if uses.get(key, 0) != 1:
 				continue
 			var along := pb - pa
@@ -601,58 +601,12 @@ func route(from: Vector3, to: Vector3) -> Dictionary:
 func islands() -> Array[Dictionary]:
 	if not _islands.is_empty() or mesh == null:
 		return _islands
-	var vertices := mesh.get_vertices()
-	var count := mesh.get_polygon_count()
-	var parent := PackedInt32Array()
-	parent.resize(count)
-	for i in range(count):
-		parent[i] = i
-	var edge_owner: Dictionary = {}
-	for i in range(count):
-		var polygon := mesh.get_polygon(i)
-		for k in range(polygon.size()):
-			var a := _vertex_key(vertices[polygon[k]])
-			var b := _vertex_key(vertices[polygon[(k + 1) % polygon.size()]])
-			var key := [a, b] if str(a) < str(b) else [b, a]
-			if edge_owner.has(key):
-				_union(parent, i, int(edge_owner[key]))
-			else:
-				edge_owner[key] = i
-	var groups: Dictionary = {}
-	for i in range(count):
-		var root := _find(parent, i)
-		if not groups.has(root):
-			groups[root] = PackedInt32Array()
-		groups[root].append(i)
-	var out: Array[Dictionary] = []
-	for root: int in groups:
-		var polygons: PackedInt32Array = groups[root]
-		var area := 0.0
-		var bounds := AABB()
-		var first := true
-		var weighted := Vector3.ZERO
-		for i in polygons:
-			var polygon := mesh.get_polygon(i)
-			var a := _polygon_area(polygon, vertices)
-			area += a
-			var centre := Vector3.ZERO
-			for v in polygon:
-				centre += vertices[v]
-				if first:
-					bounds = AABB(vertices[v], Vector3.ZERO)
-					first = false
-				else:
-					bounds = bounds.expand(vertices[v])
-			weighted += centre / float(polygon.size()) * a
-		out.append({"area": area, "polygons": polygons, "bounds": bounds, "centre": weighted / maxf(area, 0.0001)})
-	out.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return float(x["area"]) > float(y["area"]))
+	_islands = DotBotNavGeometry.islands(mesh)
 	_island_of = PackedInt32Array()
-	_island_of.resize(count)
-	for index in range(out.size()):
-		out[index]["index"] = index
-		for i: int in out[index]["polygons"]:
-			_island_of[i] = index
-	_islands = out
+	_island_of.resize(mesh.get_polygon_count())
+	for island in _islands:
+		for i: int in island["polygons"]:
+			_island_of[i] = int(island["index"])
 	return _islands
 
 
@@ -667,7 +621,7 @@ func island_at(at: Vector3, reach: float = 1.0) -> int:
 
 ## Whether [param at] is over island [param index] (inside one of its triangles seen from
 ## above, within [param reach] metres up or down). Fast enough to ask every simulated tick: the
-## island's triangles are bucketed on a grid of [constant ISLAND_CELL] metres the first time.
+## island's triangles are bucketed on a grid of [constant DotBotNavGeometry.ISLAND_CELL] metres the first time.
 ## What a ride edge's course asks of its landing.
 func on_island(index: int, at: Vector3, reach: float = 0.5) -> bool:
 	var all := islands()
@@ -675,14 +629,14 @@ func on_island(index: int, at: Vector3, reach: float = 0.5) -> bool:
 		return false
 	var island := all[index]
 	if not island.has("grid"):
-		island["grid"] = _island_grid(island)
+		island["grid"] = DotBotNavGeometry.grid(mesh, island)
 	var grid: Dictionary = island["grid"]
-	var cell := Vector2i(floori(at.x / ISLAND_CELL), floori(at.z / ISLAND_CELL))
+	var cell := Vector2i(floori(at.x / DotBotNavGeometry.ISLAND_CELL), floori(at.z / DotBotNavGeometry.ISLAND_CELL))
 	var bucket: Variant = grid.get(cell)
 	if bucket == null:
 		return false
 	for tri: Array in bucket:
-		var height := _height_in(at, tri[0], tri[1], tri[2])
+		var height := DotBotNavGeometry.height_in(at, tri[0], tri[1], tri[2])
 		if not is_nan(height) and absf(at.y - height) <= reach:
 			return true
 	return false
@@ -737,28 +691,6 @@ func _rides_between_islands() -> Dictionary:
 	return graph
 
 
-## Grid cell for [method on_island], metres.
-const ISLAND_CELL := 2.0
-
-
-func _island_grid(island: Dictionary) -> Dictionary:
-	var grid: Dictionary = {}
-	var vertices := mesh.get_vertices()
-	for i: int in island["polygons"]:
-		var polygon := mesh.get_polygon(i)
-		for k in range(1, polygon.size() - 1):
-			var tri := [vertices[polygon[0]], vertices[polygon[k]], vertices[polygon[k + 1]]]
-			var lo := Vector2(minf(tri[0].x, minf(tri[1].x, tri[2].x)), minf(tri[0].z, minf(tri[1].z, tri[2].z)))
-			var hi := Vector2(maxf(tri[0].x, maxf(tri[1].x, tri[2].x)), maxf(tri[0].z, maxf(tri[1].z, tri[2].z)))
-			for cx in range(floori(lo.x / ISLAND_CELL), floori(hi.x / ISLAND_CELL) + 1):
-				for cz in range(floori(lo.y / ISLAND_CELL), floori(hi.y / ISLAND_CELL) + 1):
-					var key := Vector2i(cx, cz)
-					if not grid.has(key):
-						grid[key] = []
-					grid[key].append(tri)
-	return grid
-
-
 ## The index of the polygon under [param at] (within [param reach] metres up or down, and inside
 ## its outline seen from above), or -1. A linear scan: for tools and for a course's goal test,
 ## not for every bot every tick.
@@ -774,7 +706,7 @@ func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 			var a := vertices[polygon[0]]
 			var b := vertices[polygon[k]]
 			var c := vertices[polygon[k + 1]]
-			var height := _height_in(at, a, b, c)
+			var height := DotBotNavGeometry.height_in(at, a, b, c)
 			if is_nan(height):
 				continue
 			var dy := absf(at.y - height)
@@ -782,56 +714,6 @@ func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 				best_dy = dy
 				best = i
 	return best
-
-
-## The height of the triangle (a, b, c) under [param at] seen from above, or NAN outside it.
-static func _height_in(at: Vector3, a: Vector3, b: Vector3, c: Vector3) -> float:
-	var v0 := Vector2(c.x - a.x, c.z - a.z)
-	var v1 := Vector2(b.x - a.x, b.z - a.z)
-	var v2 := Vector2(at.x - a.x, at.z - a.z)
-	var d00 := v0.dot(v0)
-	var d01 := v0.dot(v1)
-	var d11 := v1.dot(v1)
-	var d20 := v2.dot(v0)
-	var d21 := v2.dot(v1)
-	var denom := d00 * d11 - d01 * d01
-	if absf(denom) < 1e-9:
-		return NAN
-	var u := (d11 * d20 - d01 * d21) / denom
-	var v := (d00 * d21 - d01 * d20) / denom
-	if u < -0.001 or v < -0.001 or u + v > 1.001:
-		return NAN
-	return a.y + u * (c.y - a.y) + v * (b.y - a.y)
-
-
-static func _edge_key(a: Vector3i, b: Vector3i) -> String:
-	var forward := a.x < b.x or (a.x == b.x and (a.y < b.y or (a.y == b.y and a.z < b.z)))
-	return "%s|%s" % [a, b] if forward else "%s|%s" % [b, a]
-
-
-static func _vertex_key(v: Vector3) -> Vector3i:
-	return Vector3i(roundi(v.x * 100.0), roundi(v.y * 100.0), roundi(v.z * 100.0))
-
-
-static func _find(parent: PackedInt32Array, i: int) -> int:
-	while parent[i] != i:
-		parent[i] = parent[parent[i]]
-		i = parent[i]
-	return i
-
-
-static func _union(parent: PackedInt32Array, a: int, b: int) -> void:
-	var ra := _find(parent, a)
-	var rb := _find(parent, b)
-	if ra != rb:
-		parent[maxi(ra, rb)] = mini(ra, rb)
-
-
-static func _polygon_area(polygon: PackedInt32Array, vertices: PackedVector3Array) -> float:
-	var area := 0.0
-	for k in range(1, polygon.size() - 1):
-		area += (vertices[polygon[k]] - vertices[polygon[0]]).cross(vertices[polygon[k + 1]] - vertices[polygon[0]]).length() * 0.5
-	return area
 
 
 func describe() -> Dictionary:

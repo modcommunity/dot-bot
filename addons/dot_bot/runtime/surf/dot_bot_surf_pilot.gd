@@ -4,39 +4,14 @@ extends RefCounted
 ## Rides a surf ramp from what [DotBotSurfPlanner] found: it does what the nearest remembered
 ## state did, and looks a second and a half ahead before trusting that.
 ##
-## [b]The cache is rides.[/b] Every tick of every ride the planner found (from perturbed starts,
-## and again from wherever an earlier pilot failed) is an entry: position, velocity, the action
-## taken. [method nearest] finds the entry closest to the bot's own state -- position, plus
-## velocity times [constant VELOCITY_SECONDS], so a state going the wrong way is far from one
-## going the right way at the same place.
+## The cache is every tick of every planned ride ([method nearest] finds the entry closest in
+## position plus velocity times [constant VELOCITY_SECONDS]); [member tracking] repairs a sparse
+## cache; the veto runs the policy [member horizon] ticks ahead and swaps in a surviving action;
+## [member rolling] keeps that future instead of recomputing it. Numbers and reasoning:
+## docs/surfing.md, "The pilot".
 ##
-## [b]Copying the nearest action, once the cache is dense; tracking while it is not.[/b] By
-## default the bot takes the nearest entry's action ([method policy]): one grid lookup a tick.
-## With only the rides searched from the starts that arrived from 15 to 25% of perturbed starts
-## on game-g2gfast's surf_beginner, because an action is only right for the state it was taken
-## from. [member tracking] fixes that for a sparse cache: every [member track_every] ticks it
-## tries each action on the simulator and takes the one ending nearest where the remembered ride
-## was that many ticks later, keeping to one ride ([method _follow]); 50 to 80%. Once the repair
-## rounds have filled the cache copying beats tracking (92% against 72% of fifty starts) at half
-## the cost. The study is game-dev/docs/surf-bots-study.md.
-##
-## [b]The veto.[/b] The pilot runs its own policy [member horizon] ticks ahead on the simulator.
-## If that future ends in a pit or below the course, it tries every action held for
-## [member check_every] ticks and then the policy, and holds the one whose future survives with
-## the best score. A launch that is going to fall short is decided long before it falls: at 96
-## ticks, 118 of 119 vetoes found no action that survived; 192 finds them.
-##
-## [b]The future is kept, not recomputed[/b] ([member rolling], on by default). The simulator is
-## the motor, so while the bot's real state is the state the future predicted for this tick,
-## everything after it is still exactly what was simulated, and the only new tick to look at is
-## one more at the far end. A ride that goes as foreseen then costs one motor tick a ridden tick
-## (the far end) instead of [member horizon] every [member check_every] (eight at the defaults);
-## a ride that is pushed off the forecast (another player, a booster the simulation did not run,
-## a view the game rotated) recomputes it. Off, the future is run afresh every
-## [member check_every] ticks, which is what the study measured.
-##
-## [b]A simulator is duck typed[/b] (dot-player-controller's [code]DotFpsSimulator[/code]):
-## `step(state, command) -> int`, `command(yaw, move, jump)`, `delta`. States are its states:
+## A simulator is duck typed (dot-player-controller's [code]DotFpsSimulator[/code]):
+## `step(state, command) -> int`, `command(yaw, move, jump)`, `delta`; states have
 ## `position`, `velocity`, `duplicate_state()`. So this addon names no other.
 
 # No log channel: the game that rides says what happened.

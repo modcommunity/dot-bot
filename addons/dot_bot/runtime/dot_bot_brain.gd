@@ -280,32 +280,8 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	var through := p.through_walls >= 0.5 or world == null
 	# Candidates inside range and cone come first; the sight test is the dear part, so it is
 	# asked of the current target and then of the best score only until one is seen.
-	var cand: Array[DotBotContact] = []
 	var scores := PackedFloat32Array()
-
-	for item in all:
-		if not (item is DotBotContact):
-			continue
-		var c := item as DotBotContact
-		if not c.alive and c.id == target_id and _visible:
-			# Killed, by this bot or somebody else, in plain view: a person moves on, and does
-			# not stand pre-aiming the body for the next four seconds.
-			_forget_target()
-			continue
-		if not c.alive or not me.is_enemy(c):
-			continue
-		var to := c.aim_point() - eye
-		var d := to.length()
-		if d > p.sight:
-			continue
-		var off := rad_to_deg(forward.angle_to(to)) if d > 0.01 else 0.0
-		# Somebody the bot is already fighting stays seen while it turns after them; anybody
-		# else has to be inside the cone, or close enough to be felt.
-		var tracking := _visible and c.id == target_id and off < 90.0
-		if off > half and d > CLOSE_NOTICE and not tracking:
-			continue
-		cand.append(c)
-		scores.append(d * (1.0 + off / 60.0))
+	var cand := _candidates(me, all, p, eye, forward, half, scores)
 
 	if _visible:
 		for i in cand.size():
@@ -352,6 +328,35 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	_last_seen_at = now
 	_known_enemy = chosen.position
 	return chosen
+
+
+## Enemies inside range and cone (or already being fought), appended to the result with their closeness score in [param scores].
+func _candidates(me: DotBotContact, all: Array, p: DotBotProfile, eye: Vector3, forward: Vector3, half: float, scores: PackedFloat32Array) -> Array[DotBotContact]:
+	var cand: Array[DotBotContact] = []
+	for item in all:
+		if not (item is DotBotContact):
+			continue
+		var c := item as DotBotContact
+		if not c.alive and c.id == target_id and _visible:
+			# Killed, by this bot or somebody else, in plain view: a person moves on, and does
+			# not stand pre-aiming the body for the next four seconds.
+			_forget_target()
+			continue
+		if not c.alive or not me.is_enemy(c):
+			continue
+		var to := c.aim_point() - eye
+		var d := to.length()
+		if d > p.sight:
+			continue
+		var off := rad_to_deg(forward.angle_to(to)) if d > 0.01 else 0.0
+		# Somebody the bot is already fighting stays seen while it turns after them; anybody
+		# else has to be inside the cone, or close enough to be felt.
+		var tracking := _visible and c.id == target_id and off < 90.0
+		if off > half and d > CLOSE_NOTICE and not tracking:
+			continue
+		cand.append(c)
+		scores.append(d * (1.0 + off / 60.0))
+	return cand
 
 
 ## Whether [param c] is in line of sight from [param eye]: the chest or the head, reused for [constant SIGHT_REUSE].
