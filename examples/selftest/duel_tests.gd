@@ -475,3 +475,69 @@ func _test_utility_grenades() -> void:
 	var _t := _run_bot(brain, sc[0], world, 1.0, 2.0)
 	_check(not world.sight_blockers.has(timed), "smoke ends by its own time")
 	_done()
+
+
+func _pickup_scene(drop_at: Vector3, drop_value: float, held: Dictionary, with_enemy: bool = false) -> Array:
+	var sc := _scene(Vector3(0, 0, -15))
+	var me: DotBotContact = sc[0]
+	var world: DotBotWorld = sc[2]
+	me.loadout = held
+	if not with_enemy:
+		world.contacts_fn = func() -> Array: return [me]
+	var drop := {"id": 7, "position": drop_at, "slot": 1, "value": drop_value, "ammo": 1.0}
+	world.drops_fn = func() -> Array: return [drop]
+	return sc
+
+
+func _pickup_settings(on: float = 1.0) -> DotBotSettings:
+	var s := DotBotSettings.new()
+	s.set_difficulty("nightmare")
+	s.profile.pickup_weapons = on
+	return s
+
+
+func _test_pickup() -> void:
+	_section("pickup: a quiet bot fetches a better weapon, never in a fight, never when off")
+
+	var held := {1: {"value": 0.3, "ammo": 1.0}}
+	var sc := _pickup_scene(Vector3(5, 0, 0), 0.8, held)
+	var far := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 2.0)
+	_check(far.any(func(i: DotBotIntent) -> bool: return i.state == &"pickup" and i.move.length() > 0.1), "a better weapon in view: the bot walks to it")
+	_check(far.all(func(i: DotBotIntent) -> bool: return not i.use), "and does not press use from five metres")
+
+	sc = _pickup_scene(Vector3(0.5, 0, 0), 0.8, held)
+	var near := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 3.0)
+	_check(near.any(func(i: DotBotIntent) -> bool: return i.use), "beside it, the bot presses use")
+	_check(near.any(func(i: DotBotIntent) -> bool: return i.use and i.move.length() < 0.01), "standing still while it does")
+
+	sc = _pickup_scene(Vector3(5, 0, 0), 0.8, {})
+	var empty := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 2.0)
+	_check(empty.any(func(i: DotBotIntent) -> bool: return i.state == &"pickup"), "an empty slot is worth a walk")
+
+	sc = _pickup_scene(Vector3(5, 0, 0), 0.8, {1: {"value": 0.8, "ammo": 0.1}})
+	var low := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 2.0)
+	_check(low.any(func(i: DotBotIntent) -> bool: return i.state == &"pickup"), "low ammunition makes the same weapon worth a walk")
+
+	sc = _pickup_scene(Vector3(0.5, 0, 0), 0.2, held)
+	var worse := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 3.0)
+	_check(worse.all(func(i: DotBotIntent) -> bool: return i.state != &"pickup" and not i.use), "a worse weapon is left lying")
+
+	sc = _pickup_scene(Vector3(1.5, 0, 0), 0.8, held, true)
+	var brawl := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 3.0)
+	var fighting := brawl.filter(func(i: DotBotIntent) -> bool: return i.target_id == 2)
+	_check(not fighting.is_empty() and fighting.all(func(i: DotBotIntent) -> bool: return i.state != &"pickup" and not i.use), "with an enemy in view it fights and does not fetch")
+
+	sc = _pickup_scene(Vector3(0.5, 0, 0), 0.8, held)
+	var off := _run_bot(DotBotBrain.new(1, _pickup_settings(0.0)), sc[0], sc[2], 3.0)
+	_check(off.all(func(i: DotBotIntent) -> bool: return i.state != &"pickup" and not i.use), "bot_pickup_weapons 0: it never goes for one")
+
+	sc = _pickup_scene(Vector3(60, 0, 0), 0.8, held)
+	var distant := _run_bot(DotBotBrain.new(1, _pickup_settings()), sc[0], sc[2], 2.0)
+	_check(distant.all(func(i: DotBotIntent) -> bool: return i.state != &"pickup"), "past pickup_range it is not noticed")
+
+	sc = _pickup_scene(Vector3(0.5, 0, 0), 0.8, held)
+	var gaveup := DotBotBrain.new(1, _pickup_settings())
+	var tries := _run_bot(gaveup, sc[0], sc[2], 6.0)
+	var presses := tries.filter(func(i: DotBotIntent) -> bool: return i.use)
+	_check(presses.size() * TICK < 2.0 and tries.slice(-50).all(func(i: DotBotIntent) -> bool: return not i.use), "a weapon that stays put after a try is given up on, not pressed forever")
+	_done()

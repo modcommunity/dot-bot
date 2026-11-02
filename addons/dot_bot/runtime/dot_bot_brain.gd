@@ -91,6 +91,8 @@ var _lost_at: float = -INF
 var _peeking: bool = false
 var _chase_lost: bool = false
 var _grenade_ready: bool = false
+## Fetching a better weapon from the floor; see [DotBotPickup].
+var pickup := DotBotPickup.new()
 
 # Sound and pain.
 var _heard_pos: Vector3 = Vector3.INF
@@ -184,6 +186,8 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 
 	_scene = &"roam"
 	_scene_up = 0.0
+	if seen != null or not _quiet(now, p):
+		pickup.cancel()
 	if seen != null:
 		_fight(me, seen, world, p, now, dt, out)
 	elif _last_seen_pos != Vector3.INF and now - _last_seen_at <= _hold_time(p, _peeking or _chase_lost):
@@ -490,6 +494,8 @@ func _listen(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float
 func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	out.state = &"roam"
 	var here := Vector2(me.position.x, me.position.z)
+	if _fetch(me, world, p, now, dt, out):
+		return
 
 	if _waypoint == Vector3.INF or here.distance_to(Vector2(_waypoint.x, _waypoint.z)) < 2.0:
 		_waypoint = _pick_waypoint(me, world, p)
@@ -523,6 +529,30 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 			_route_goal = Vector3.INF
 		_stuck_at = now
 		_stuck_from = me.position
+
+
+## True when a weapon on the floor has this tick: walk to it, look at it, press use near it.
+func _fetch(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> bool:
+	var plan := pickup.step(me, world, p, now, true)
+	if plan.is_empty():
+		return false
+	var at: Vector3 = plan["position"]
+	out.state = &"pickup"
+	var _v := aim.look_at_point(me.eye(), at + Vector3.UP * 0.2, dt)
+	if bool(plan["use"]):
+		out.use = true
+		_set_move(out, Vector2.ZERO)
+	else:
+		_set_move(out, _toward(me, world, at))
+	return true
+
+
+## No enemy in mind: nothing seen, remembered, heard or felt lately.
+func _quiet(now: float, p: DotBotProfile) -> bool:
+	if _last_seen_pos != Vector3.INF and now - _last_seen_at <= _hold_time(p, _peeking or _chase_lost):
+		return false
+	var last_noise := maxf(_heard_at, _hurt_at)
+	return not (last_noise > -INF and now - last_noise <= _hold_time(p, _chase_sound or _hurt_at >= _heard_at))
 
 
 func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> Vector3:

@@ -59,6 +59,11 @@ var route_fn: Callable = Callable()
 ## ([member DotBotIntent.ride]); the game rides it.
 var route_detail_fn: Callable = Callable()
 
+## [code]drops_fn.call() -> Array[Dictionary][/code]: the weapons lying about, each
+## [code]{id, position, slot, value, ammo}[/code] (value and ammo as in [member DotBotContact.loadout]).
+## Unset: none, and no bot goes for one.
+var drops_fn: Callable = Callable()
+
 ## Recent sounds: dictionaries with position, loudness (1 is a gunshot), source (an id), at
 ## and seq.
 var sounds: Array[Dictionary] = []
@@ -113,6 +118,10 @@ static func segment_hits_sphere(from: Vector3, to: Vector3, center: Vector3, rad
 	var len2 := d.length_squared()
 	var t := 0.0 if len2 < 0.000001 else clampf((center - from).dot(d) / len2, 0.0, 1.0)
 	return (from + d * t).distance_squared_to(center) <= radius * radius
+
+
+func drops() -> Array:
+	return drops_fn.call() if drops_fn.is_valid() else []
 
 
 func wall_ahead(from: Vector3, dir: Vector3, reach: float) -> Dictionary:

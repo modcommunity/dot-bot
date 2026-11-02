@@ -32,6 +32,9 @@ var air_jump: bool = false
 ## Throw a grenade (or whatever a game's throwable is) along the view this tick.
 var throw: bool = false
 
+## Press the use key this tick (take the weapon lying in front of it).
+var use: bool = false
+
 ## The ride edge the bot's route reached this tick ([method DotBotWorld.route_detail]), or -1. A
 ## game that rides it hands the movement half of the command to its surf pilot until the ride
 ## ends, keeping the view and the trigger the brain's, and tells the brain
@@ -41,7 +44,7 @@ var ride: int = -1
 ## Whom the bot is fighting, or -1.
 var target_id: int = -1
 
-## What the brain is doing, for describe() and a suite: fight, search, listen, roam, retreat, dead.
+## What the brain is doing, for describe() and a suite: fight, search, listen, roam, pickup, retreat, dead.
 var state: StringName = &"roam"
 
 
@@ -67,6 +70,7 @@ func write_fire(command: Object, throw_button: String = "") -> void:
 		return
 	command.set(&"yaw", yaw)
 	command.set(&"pitch", pitch)
+	_button(command, "BUTTON_USE", use)
 	_button(command, "BUTTON_ATTACK", fire)
 	if throw_button != "":
 		_button(command, throw_button, throw)
@@ -95,5 +99,5 @@ static func direction(p_yaw: float, p_pitch: float) -> Vector3:
 func describe() -> Dictionary:
 	return {
 		"state": state, "target": target_id, "yaw": snappedf(yaw, 0.1), "pitch": snappedf(pitch, 0.1),
-		"move": move, "fire": fire, "crouch": crouch, "jump": jump, "throw": throw, "ride": ride,
+		"move": move, "fire": fire, "crouch": crouch, "jump": jump, "throw": throw, "use": use, "ride": ride,
 	}
