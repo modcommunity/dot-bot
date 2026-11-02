@@ -11,8 +11,6 @@ extends RefCounted
 ## chained (trick_chain) and how fast to start (trick_delay) are SPEC rows; the dice are the
 ## brain's own seeded stream, so two bots on one map do not run the same wall the same way.
 
-const CHANNEL := "dot.bot"
-
 ## Default flat speeds below which no slide or wall run is tried: the motor needs about this much.
 const SLIDE_SPEED := 6.5
 const WALL_RUN_SPEED := 9.5

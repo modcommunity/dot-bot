@@ -4,8 +4,6 @@ extends RefCounted
 ## A quiet bot with a worse or empty weapon, or low ammo, notices a better one, walks to it and presses the use key; it returns what to do and the game's own use path does the taking.
 ## Better is the game's rating ([member DotBotContact.loadout], [method DotBotWorld.drops]); a game with its own idea of a goal overrides [method gain].
 
-const CHANNEL := "dot.bot"
-
 ## Least gain worth a walk.
 const MIN_GAIN := 0.1
 ## Under this fraction of ammunition a bot wants more of the same slot.
