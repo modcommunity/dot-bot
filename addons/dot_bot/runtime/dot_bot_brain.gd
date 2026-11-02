@@ -274,6 +274,11 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	var current: DotBotContact = null
 	var best: DotBotContact = null
 	var best_score := INF
+	var through := p.through_walls >= 0.5 or world == null
+	# Candidates inside range and cone come first; the sight test is the dear part, so it is
+	# asked of the current target and then of the best score only until one is seen.
+	var cand: Array[DotBotContact] = []
+	var scores := PackedFloat32Array()
 
 	for item in all:
 		if not (item is DotBotContact):
@@ -296,15 +301,30 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 		var tracking := _visible and c.id == target_id and off < 90.0
 		if off > half and d > CLOSE_NOTICE and not tracking:
 			continue
-		if p.through_walls < 0.5 and world != null:
-			if not _sees(world, eye, c, now):
-				continue
-		var score := d * (1.0 + off / 60.0)
-		if c.id == target_id and _visible:
-			current = c
-		if score < best_score:
-			best_score = score
-			best = c
+		cand.append(c)
+		scores.append(d * (1.0 + off / 60.0))
+
+	if _visible:
+		for i in cand.size():
+			if cand[i].id == target_id:
+				if through or _sees(world, eye, cand[i], now):
+					current = cand[i]
+				scores[i] = INF
+				break
+	if current == null:
+		while true:
+			var bi := -1
+			best_score = INF
+			for i in cand.size():
+				if scores[i] < best_score:
+					best_score = scores[i]
+					bi = i
+			if bi < 0:
+				break
+			if through or _sees(world, eye, cand[bi], now):
+				best = cand[bi]
+				break
+			scores[bi] = INF
 
 	var chosen := current if current != null else best
 
@@ -565,7 +585,7 @@ func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> 
 		_known_enemy = Vector3.INF
 		return best
 	# Hunting: no lead, but a body somewhere on the map; head for the place nearest the closest one.
-	if _rng.next_unit() < p.map_knowledge * 0.6:
+	if _rng.next_unit() < p.map_knowledge * 0.4:
 		var prey := _nearest_enemy(me, world)
 		if prey != Vector3.INF:
 			var near := far[0]
