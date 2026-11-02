@@ -372,6 +372,79 @@ func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 1.5, limit:
 	return _find_edges(first_id, reaches, -0.9, 24.0, spacing, limit, cost, true)
 
 
+## Joins neighbouring islands where their rims come within [param max_gap] metres sideways: the lower rim climbs at most [param max_rise] to the higher, the higher drops to the lower, and a chest-high ray between them is clear. One pair of edges per pair of islands (the closest), at most [param limit] edges; returns how many. Hops only look off rims of one island at a time along one heading, so small islands beside a main one stayed apart.
+func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 1.2, limit: int = 600, cost: float = 3.0) -> int:
+	if not is_ready():
+		return 0
+	var all := islands()
+	var vertices := mesh.get_vertices()
+	var uses := {}
+	for i in range(mesh.get_polygon_count()):
+		var polygon := mesh.get_polygon(i)
+		for k in polygon.size():
+			var key := _edge_key(_vertex_key(vertices[polygon[k]]), _vertex_key(vertices[polygon[(k + 1) % polygon.size()]]))
+			uses[key] = uses.get(key, 0) + 1
+	var grid := {}
+	var rim: Array = []
+	for i in range(mesh.get_polygon_count()):
+		var polygon := mesh.get_polygon(i)
+		var owner := _island_of[i] if i < _island_of.size() else -1
+		for k in polygon.size():
+			var pa := vertices[polygon[k]]
+			var pb := vertices[polygon[(k + 1) % polygon.size()]]
+			if uses.get(_edge_key(_vertex_key(pa), _vertex_key(pb)), 0) != 1:
+				continue
+			# two points per rim edge, so a long wall of mesh still has candidates along it
+			for p: Vector3 in [pa, pa.lerp(pb, 0.5)]:
+				var cell := Vector2i(floori(p.x / max_gap), floori(p.z / max_gap))
+				if not grid.has(cell):
+					grid[cell] = []
+				grid[cell].append(rim.size())
+				rim.append([p, owner])
+	if all.size() < 2:
+		return 0
+	var best := {}
+	for entry: Array in rim:
+		var v: Vector3 = entry[0]
+		var a: int = entry[1]
+		var cv := Vector2i(floori(v.x / max_gap), floori(v.z / max_gap))
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				for j: int in grid.get(Vector2i(cv.x + dx, cv.y + dz), []):
+					var w: Vector3 = rim[j][0]
+					var b: int = rim[j][1]
+					if b == a or a < 0 or b < 0 or a > b:
+						continue
+					var flat := Vector2(v.x - w.x, v.z - w.z).length()
+					var dy := absf(v.y - w.y)
+					if flat > max_gap or dy > 24.0 or (dy > max_rise and flat > 0.5):
+						continue
+					var score := flat + dy
+					var pair := Vector2i(a, b)
+					if not best.has(pair) or score < best[pair][2]:
+						best[pair] = [v, w, score]
+	var space: PhysicsDirectSpaceState3D = null
+	if _root != null and is_instance_valid(_root) and _root.is_inside_tree():
+		space = _root.get_world_3d().direct_space_state
+	var added := 0
+	var chest := Vector3(0.0, 0.9, 0.0)
+	for pair: Vector2i in best:
+		var v: Vector3 = best[pair][0]
+		var w: Vector3 = best[pair][1]
+		if space != null and not space.intersect_ray(PhysicsRayQueryParameters3D.create(v + chest, w + chest)).is_empty():
+			continue
+		var low := v if v.y <= w.y else w
+		var high := w if v.y <= w.y else v
+		add_ride(high, low, first_id + added, cost)
+		added += 1
+		if high.y - low.y <= max_rise:
+			add_ride(low, high, first_id + added, cost)
+			added += 1
+		if added >= limit:
+			break
+	return added
+
+
 func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float, spacing: float, limit: int, cost: float, other_island: bool) -> int:
 	if not is_ready():
 		return 0
@@ -494,7 +567,8 @@ func route(from: Vector3, to: Vector3) -> Dictionary:
 		return out
 	var query := NavigationPathQueryParameters3D.new()
 	query.map = _map
-	query.start_position = from
+	# a body a little off the mesh (island -1) gets a one-point stub unless snapped
+	query.start_position = closest(from)
 	query.target_position = to
 	query.metadata_flags = NavigationPathQueryParameters3D.PATH_METADATA_INCLUDE_TYPES | NavigationPathQueryParameters3D.PATH_METADATA_INCLUDE_RIDS
 	var result := NavigationPathQueryResult3D.new()

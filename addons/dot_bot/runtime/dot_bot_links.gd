@@ -18,6 +18,8 @@ const PLATFORM_ID := 3000000
 const DROP_MIN := 0.6
 ## Ride ids from here up are jumps across a gap ([method DotBotNav.find_hops]).
 const HOP_ID := 4000000
+## Ride ids from here up join neighbouring islands ([method DotBotNav.find_stitches]).
+const STITCH_ID := 6000000
 ## Ride ids from here up are ladders, climbed by the brain itself ([method ladder_of]), not handed to a game's rider.
 const LADDER_ID := 5000000
 ## A ladder's travel cost per metre: slower than walking, so a stair or ramp beside it wins.
@@ -197,6 +199,7 @@ func join(nav: DotBotNav) -> Dictionary:
 		stats["drops"] = dropped
 		hopped = nav.find_hops(HOP_ID) if drops else 0
 		stats["hops"] = hopped
+		stats["stitches"] = nav.find_stitches(STITCH_ID) if drops else 0
 	joined = stats
 	return stats
 
