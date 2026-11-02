@@ -73,7 +73,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 
 | To change | Where |
 | --- | --- |
-| What a bot may know | `DotBotWorld`: subclass, or set `contacts_fn`, `line_of_sight_fn`, `waypoints_fn`, `projectile_speed_fn` |
+| What a bot may know | `DotBotWorld`: subclass, or set `contacts_fn`, `line_of_sight_fn`, `waypoints_fn`, `projectile_speed_fn`; `extra_waypoints` (e.g. `DotBotNav.spread_points`) adds mesh-derived places beyond spawns |
 | What it hears | `DotBotWorld.emit_sound(position, loudness, source, now)` from the game's shots and steps |
 | That it was hit | `DotBotBrain.hurt(from, now)` |
 | How it plays | `bot_difficulty` and the `bot_*` settings, or a `DotBotSettings` of a game's own per bot |

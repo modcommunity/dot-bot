@@ -31,6 +31,9 @@ const SOUND_LIFETIME := 1.0
 ## [code]() -> Array[/code] of [DotBotContact]: every body, the bots included.
 var contacts_fn: Callable = Callable()
 
+## Places beyond [member waypoints_fn], e.g. [method DotBotNav.spread_points]; roaming bots visit them too.
+var extra_waypoints := PackedVector3Array()
+
 ## [code](from: Vector3, to: Vector3) -> bool[/code].
 var line_of_sight_fn: Callable = Callable()
 
@@ -137,7 +140,9 @@ func walkable_near(at: Vector3) -> Vector3:
 
 
 func waypoints() -> PackedVector3Array:
-	return waypoints_fn.call() if waypoints_fn.is_valid() else PackedVector3Array()
+	var out := waypoints_fn.call() if waypoints_fn.is_valid() else PackedVector3Array()
+	out.append_array(extra_waypoints)
+	return out
 
 
 func route(from: Vector3, to: Vector3) -> PackedVector3Array:

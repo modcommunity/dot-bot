@@ -245,6 +245,38 @@ func random_point(stream: DotRandomStream) -> Vector3:
 	return a + (b - a) * u + (c - a) * v
 
 
+## [param count] places spread over the mesh's largest island: farthest-point picks from random
+## candidates, so rooms and corridors a spawn list never names get a waypoint. Empty when unbaked.
+func spread_points(count: int, stream: DotRandomStream, min_gap: float = 6.0) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if not is_baked() or count <= 0:
+		return out
+	var main := islands()
+	var candidates: Array[Vector3] = []
+	for _i in range(count * 8):
+		var at := random_point(stream)
+		if main.is_empty() or island_at(at, 0.6) == 0:
+			candidates.append(at)
+	if candidates.is_empty():
+		return out
+	var gaps: Array[float] = []
+	gaps.resize(candidates.size())
+	gaps.fill(INF)
+	var next := 0
+	while out.size() < count:
+		var chosen := candidates[next]
+		out.append(chosen)
+		var far := -1.0
+		for i in range(candidates.size()):
+			gaps[i] = minf(gaps[i], candidates[i].distance_to(chosen))
+			if gaps[i] > far:
+				far = gaps[i]
+				next = i
+		if far < min_gap:
+			break
+	return out
+
+
 ## Frees the navigation map. Call when the map it was baked from goes away.
 func _notification(what: int) -> void:
 	# The RIDs by hand: a method call on an object being deleted finds it already gone.

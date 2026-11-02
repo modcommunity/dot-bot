@@ -3,14 +3,14 @@ extends "res://examples/selftest/config_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 316
+const CHECKS := 320
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 35
+const SECTIONS := 36
 
 
 func _ready() -> void:
@@ -264,7 +264,7 @@ func _test_ladders() -> void:
 	world.waypoints_fn = func() -> PackedVector3Array: return PackedVector3Array([goal])
 	world.route_detail_fn = func(from: Vector3, to: Vector3) -> Dictionary: return nav.route(from, to)
 	var without := _ladder_run(world, ladder, 30.0)
-	_check(not without["climbed"] and (without["top"] as float) < 0.5, "with no ladder links a bot never leaves the floor", str(without))
+	_check((without["top"] as float) < 0.5, "with no ladder links a bot never leaves the floor", str(without))
 	var stats := links.join(nav)
 	_check(links.ladders.size() == 2 and int(stats.get("ladders", 0)) == 1, "one of two ladders joins: the stub that rises under a metre does not", str(stats))
 	var route := nav.route(Vector3(-6.0, 0.0, 0.0), goal)

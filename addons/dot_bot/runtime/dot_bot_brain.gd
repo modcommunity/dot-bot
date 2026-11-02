@@ -564,7 +564,30 @@ func _pick_waypoint(me: DotBotContact, world: DotBotWorld, p: DotBotProfile) -> 
 				best = point
 		_known_enemy = Vector3.INF
 		return best
+	# Hunting: no lead, but a body somewhere on the map; head for the place nearest the closest one.
+	if _rng.next_unit() < p.map_knowledge * 0.6:
+		var prey := _nearest_enemy(me, world)
+		if prey != Vector3.INF:
+			var near := far[0]
+			for point in far:
+				if point.distance_to(prey) < near.distance_to(prey):
+					near = point
+			return near
 	return far[_rng.next_range_i(0, far.size() - 1)]
+
+
+func _nearest_enemy(me: DotBotContact, world: DotBotWorld) -> Vector3:
+	var best := Vector3.INF
+	var best_d := INF
+	for item in world.contacts():
+		var c := item as DotBotContact
+		if c == null or not c.alive or not me.is_enemy(c):
+			continue
+		var d := c.position.distance_to(me.position)
+		if d < best_d:
+			best_d = d
+			best = c.position
+	return best
 
 
 # --- Moving --------------------------------------------------------------------
