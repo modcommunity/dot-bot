@@ -541,3 +541,92 @@ func _test_pickup() -> void:
 	var presses := tries.filter(func(i: DotBotIntent) -> bool: return i.use)
 	_check(presses.size() * TICK < 2.0 and tries.slice(-50).all(func(i: DotBotIntent) -> bool: return not i.use), "a weapon that stays put after a try is given up on, not pressed forever")
 	_done()
+
+
+class FakeTuning extends RefCounted:
+	var damage := 20.0
+	var pellets := 1.0
+
+
+class FakeDef extends RefCounted:
+	var tuning: Object = FakeTuning.new()
+	var use_interval_ticks := 10
+	var infinite_reserve := false
+	var magazine := 10
+	var slot := 2
+	var ammo_type := &"bullet"
+
+	func reserve_cap() -> int:
+		return 30
+
+
+class FakeHeld extends RefCounted:
+	var def: Object = null
+	var magazine := 5
+
+
+class FakeAmmo extends RefCounted:
+	func count(_t: StringName) -> int:
+		return 15
+
+
+class FakeCatalogue extends RefCounted:
+	var defs := {}
+
+	func get_def(id: StringName) -> Object:
+		return defs.get(id)
+
+
+class FakeArsenal extends RefCounted:
+	var catalogue: Object = FakeCatalogue.new()
+	var held := {}
+
+	func slot_at(slot: int) -> Object:
+		return held.get(slot)
+
+	func ammo() -> Object:
+		return FakeAmmo.new()
+
+
+class FakeDrops extends RefCounted:
+	var list: Array[Dictionary] = []
+
+	func snapshot() -> Array[Dictionary]:
+		return list
+
+
+func _test_arms() -> void:
+	_section("arms: weapon rating, loadout and drops from a duck-typed arsenal")
+	var def := FakeDef.new()
+	_check(is_equal_approx(DotBotArms.rate(def), 20.0 * 2.0 / DotBotArms.FULL_DPS), "rating is damage per second over the full-rating figure")
+	var fast := FakeDef.new()
+	fast.use_interval_ticks = 2
+	_check(DotBotArms.rate(fast) > DotBotArms.rate(def), "a faster weapon rates higher")
+	fast.tuning = null
+	_check(DotBotArms.rate(fast) > 0.0 and DotBotArms.rate(null) == 0.0, "no tuning rates by the default damage; no definition rates 0")
+	_check(is_equal_approx(DotBotArms.ammo_fraction(def, 5, 15), 0.5), "ammunition is a fraction of magazine plus reserve cap")
+	def.infinite_reserve = true
+	_check(DotBotArms.ammo_fraction(def, 0, 0) == 1.0, "infinite reserve is always full")
+	def.infinite_reserve = false
+
+	var arsenal := FakeArsenal.new()
+	var h := FakeHeld.new()
+	h.def = def
+	arsenal.held[2] = h
+	var load := DotBotArms.loadout_of(arsenal)
+	_check(load.size() == 1 and load.has(2) and is_equal_approx(float(load[2]["ammo"]), 0.5), "loadout holds one entry per carried slot with its ammunition")
+	_check(DotBotArms.loadout_of(null).is_empty(), "no arsenal, empty loadout")
+	var rated := DotBotArms.loadout_of(arsenal, func(_d: Object) -> float: return 0.77)
+	_check(is_equal_approx(float(rated[2]["value"]), 0.77), "a game's own rater replaces the default")
+
+	arsenal.catalogue.defs[&"smg"] = def
+	var drops := FakeDrops.new()
+	drops.list.append({"id": 4, "state": {"id": "smg", "magazine": 10, "reserve": 30}, "at": Transform3D(Basis.IDENTITY, Vector3(1, 2, 3))})
+	drops.list.append({"id": 5, "state": {"id": "unknown"}, "at": Transform3D.IDENTITY})
+	var lying := DotBotArms.drops_of(drops, arsenal)
+	_check(lying.size() == 1 and lying[0]["position"] == Vector3(1, 2, 3) and lying[0]["slot"] == 2 and is_equal_approx(float(lying[0]["ammo"]), 1.0), "a drop becomes {id, position, slot, value, ammo}; an unknown weapon is skipped")
+	_check(DotBotArms.drops_of(null, arsenal).is_empty() and DotBotArms.drops_of(drops, null).is_empty(), "no drop set or no arsenal, nothing lying")
+	var world := DotBotWorld.new()
+	DotBotArms.wire(world, func() -> Object: return drops, func() -> Object: return arsenal)
+	_check(world.drops().size() == 1, "wire sets the world's drops_fn")
+	_done()

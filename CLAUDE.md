@@ -30,6 +30,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_aim.gd` | `DotBotAim`: the view, the aim error, the reaction and the trigger; the brain's, and a game with its own decisions uses it alone |
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
 | `addons/dot_bot/runtime/dot_bot_pickup.gd` | `DotBotPickup`: a quiet bot fetches a better weapon lying about with the use key (`bot_pickup_weapons`, `bot_pickup_range`); [design](docs/design.md) |
+| `addons/dot_bot/runtime/dot_bot_arms.gd` | `DotBotArms`: damage-per-second weapon rating, `loadout_of(arsenal)` for `DotBotContact.loadout`, `wire(world, drops_source, arsenal_source)` for `drops_fn`; duck typed over dot-weapon's arsenal and drops, so a game wires pickup in two lines |
 | `addons/dot_bot/runtime/dot_bot_tricks.gd` | `DotBotTricks`: slide, slide-jump, wall run, wall jump, cover duck and the air-jump, by scenario and `bot_slide`, `bot_wall_run`, `bot_air_jump`, `bot_trick_chain`, `bot_trick_delay`, `bot_cover_crouch`; [design](docs/design.md#movement-tricks) |
 | `addons/dot_bot/runtime/dot_bot_roster.gd` | `DotBotRoster`: from the bots there are to the number wanted, named |
 | `addons/dot_bot/runtime/dot_bot_nav.gd`, `dot_bot_hiding.gd`, `dot_bot_search.gd` | for hiding games: a navigation mesh baked from a map's colliders; places scored by sight lines and picked apart; a seeker's memory of the places |
