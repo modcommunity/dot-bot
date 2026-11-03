@@ -373,7 +373,10 @@ func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 1.5, limit:
 
 
 ## Joins neighbouring islands where their rims come within [param max_gap] metres sideways: the lower rim climbs at most [param max_rise] to the higher, the higher drops to the lower, and a chest-high ray between them is clear.
-## Defaults are a jump's reach: [param max_rise] 0.9 is what find_hops lands on, and the gap allowed shrinks linearly to half of [param max_gap] at that rise, since the apex is spent climbing. A wider or higher pair is left unlinked (a bot wedges at a rim it cannot cross). Rims closer than 0.5 m sideways drop at any height. One pair of edges per pair of islands (the closest), at most [param limit] edges; returns how many. Hops only look off rims of one island at a time along one heading, so small islands beside a main one stayed apart.
+## Defaults are a jump's reach: [param max_rise] 0.9 is what find_hops lands on, and the gap allowed shrinks linearly to half of [param max_gap] at that rise, since the apex is spent climbing. A wider or higher pair is left unlinked (a bot wedges at a rim it cannot cross). Rims closer than 0.5 m sideways drop at any height. One pair of edges per pair of islands (the closest of its eight nearest candidates that a ray sees across), at most [param limit] edges; returns how many. Hops only look off rims of one island at a time along one heading, so small islands beside a main one stayed apart.
+const STITCH_CANDIDATES := 8
+
+
 func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, limit: int = 600, cost: float = 3.0) -> int:
 	if not is_ready():
 		return 0
@@ -422,17 +425,28 @@ func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, l
 						continue
 					var score := flat + dy
 					var pair := Vector2i(a, b)
-					if not best.has(pair) or score < best[pair][2]:
-						best[pair] = [v, w, score]
+					if not best.has(pair):
+						best[pair] = []
+					var kept: Array = best[pair]
+					kept.append([v, w, score])
+					kept.sort_custom(func(x: Array, y: Array) -> bool: return x[2] < y[2])
+					if kept.size() > STITCH_CANDIDATES:
+						kept.resize(STITCH_CANDIDATES)
 	var space: PhysicsDirectSpaceState3D = null
 	if _root != null and is_instance_valid(_root) and _root.is_inside_tree():
 		space = _root.get_world_3d().direct_space_state
 	var added := 0
 	var chest := Vector3(0.0, 0.9, 0.0)
 	for pair: Vector2i in best:
-		var v: Vector3 = best[pair][0]
-		var w: Vector3 = best[pair][1]
-		if space != null and not space.intersect_ray(PhysicsRayQueryParameters3D.create(v + chest, w + chest)).is_empty():
+		# the closest pair may lie through a wall (a doorway's jamb); the next closest that sees across is the link
+		var v := Vector3.INF
+		var w := Vector3.INF
+		for candidate: Array in best[pair]:
+			if space == null or space.intersect_ray(PhysicsRayQueryParameters3D.create(candidate[0] + chest, candidate[1] + chest)).is_empty():
+				v = candidate[0]
+				w = candidate[1]
+				break
+		if v == Vector3.INF:
 			continue
 		var low := v if v.y <= w.y else w
 		var high := w if v.y <= w.y else v
