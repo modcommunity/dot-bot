@@ -44,6 +44,9 @@ var _ride_of_link: Dictionary = {}
 ## Polygon index -> island, from [method islands]; empty until asked.
 var _island_of: PackedInt32Array = PackedInt32Array()
 var _islands: Array[Dictionary] = []
+## Polygon indices bucketed by [constant DotBotNavGeometry.ISLAND_CELL] cell over their bounds, built the first time [method polygon_at] asks.
+var _poly_grid: Dictionary = {}
+var _poly_grid_for := Vector2i.ZERO
 ## Island -> islands one ride edge reaches, for [method joined]; null until asked.
 var _ride_graph: Variant = null
 
@@ -107,6 +110,7 @@ func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotRes
 	_started = Time.get_ticks_usec()
 	_root = root
 	mesh = NavigationMesh.new()
+	_poly_grid.clear()
 	mesh.cell_size = CELL
 	mesh.cell_height = CELL_HEIGHT
 	# Whole cells, rounded the safe way (a body wider and taller, a step lower), which the baker
@@ -294,6 +298,7 @@ func clear() -> void:
 	_unlink_all()
 	_island_of = PackedInt32Array()
 	_islands.clear()
+	_poly_grid.clear()
 	_ride_graph = null
 	if _region.is_valid():
 		NavigationServer3D.free_rid(_region)
@@ -712,9 +717,14 @@ func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 	if mesh == null:
 		return -1
 	var vertices := mesh.get_vertices()
+	if _poly_grid.is_empty() or _poly_grid_for != Vector2i(vertices.size(), mesh.get_polygon_count()):
+		_build_poly_grid(vertices)
 	var best := -1
 	var best_dy := INF
-	for i in range(mesh.get_polygon_count()):
+	var bucket: Variant = _poly_grid.get(Vector2i(floori(at.x / DotBotNavGeometry.ISLAND_CELL), floori(at.z / DotBotNavGeometry.ISLAND_CELL)))
+	if bucket == null:
+		return -1
+	for i: int in bucket:
 		var polygon := mesh.get_polygon(i)
 		for k in range(1, polygon.size() - 1):
 			var a := vertices[polygon[0]]
@@ -728,6 +738,26 @@ func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 				best_dy = dy
 				best = i
 	return best
+
+
+func _build_poly_grid(vertices: PackedVector3Array) -> void:
+	_poly_grid.clear()
+	_poly_grid_for = Vector2i(vertices.size(), mesh.get_polygon_count())
+	var cell := DotBotNavGeometry.ISLAND_CELL
+	for i in range(mesh.get_polygon_count()):
+		var lo := Vector2(INF, INF)
+		var hi := Vector2(-INF, -INF)
+		for index in mesh.get_polygon(i):
+			var v := vertices[index]
+			lo = Vector2(minf(lo.x, v.x), minf(lo.y, v.z))
+			hi = Vector2(maxf(hi.x, v.x), maxf(hi.y, v.z))
+		# Padded, because height_in accepts a point a little outside the triangle.
+		for cx in range(floori((lo.x - 1.0) / cell), floori((hi.x + 1.0) / cell) + 1):
+			for cz in range(floori((lo.y - 1.0) / cell), floori((hi.y + 1.0) / cell) + 1):
+				var key := Vector2i(cx, cz)
+				var bucket: PackedInt32Array = _poly_grid.get(key, PackedInt32Array())
+				bucket.append(i)
+				_poly_grid[key] = bucket
 
 
 func describe() -> Dictionary:
