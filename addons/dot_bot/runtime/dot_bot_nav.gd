@@ -711,8 +711,8 @@ func _rides_between_islands() -> Dictionary:
 
 
 ## The index of the polygon under [param at] (within [param reach] metres up or down, and inside
-## its outline seen from above), or -1. A linear scan: for tools and for a course's goal test,
-## not for every bot every tick.
+## its outline seen from above), or -1. Uses a polygon grid built on first call, cheap
+## enough per tick; the grid is padded by a metre, so keep [param reach] near that.
 func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 	if mesh == null:
 		return -1
