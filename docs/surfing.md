@@ -67,3 +67,5 @@ Rides a surf ramp from what [DotBotSurfPlanner] found: it does what the nearest 
 - **`(dict[key] as PackedInt32Array).append(i)` appends to a copy.** The prototype built its lookup grid that way, so the grid was always empty and every lookup scanned every entry. Append through the dictionary (`dict[key].append(i)`) or a typed local.
 - **A packed array kept is the caller's array**: the pilot copies the rides it is handed, because the planner keeps appending to its own.
 - A cache is only as fresh as the movement and collision it was planned on: replan after either changes.
+
+`DotBotSurfPlanner.stall_seconds` (8 s) ends a search whose best score has not improved for that long. A search with no goal otherwise runs all of `seconds` (a 30 s budget cost 165 s of CPU per hopeless start on a 26 m ride), and every pilot failure triggers up to three of them. Set it to 0 for the old behaviour.

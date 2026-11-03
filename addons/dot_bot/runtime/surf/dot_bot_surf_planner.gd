@@ -40,6 +40,9 @@ var cell: float = 0.9144
 var speed_bucket: float = 1.905
 ## Give up after this many seconds of simulated ride.
 var seconds: float = 20.0
+## Give up when the beam's best score has not improved for this many seconds of ride (0 = never):
+## a short ride that is not found in a few seconds is not found by running to [member seconds].
+var stall_seconds: float = 8.0
 ## Ticks back from a failure a repair search starts (a second at 128 Hz).
 var repair_back: int = 128
 ## Ranked children examined, for the report.
@@ -57,7 +60,13 @@ func search(start: Variant, course: DotBotSurfCourse, sim: Variant) -> Dictionar
 	var delta: float = sim.delta
 	var steps := int(seconds / (delta * float(hold)))
 	var deaths := 0
+	var top := -INF
+	var top_depth := 0
+	var stall_steps := int(stall_seconds / (delta * float(hold))) if stall_seconds > 0.0 else 0
 	for depth in range(steps):
+		if stall_steps > 0 and depth - top_depth > stall_steps:
+			return {"found": false, "actions": PackedByteArray(), "ticks": depth * hold,
+				"why": "no progress for %.0f s (at %.2f s)" % [stall_seconds, depth * hold * delta]}
 		var best: Dictionary = {}
 		for node: Dictionary in beam:
 			for action in range(DotBotSurfPilot.ACTIONS.size()):
@@ -87,6 +96,9 @@ func search(start: Variant, course: DotBotSurfCourse, sim: Variant) -> Dictionar
 		var ranked: Array = best.values()
 		ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
 		beam = ranked.slice(0, width)
+		if float(beam[0]["score"]) > top + 0.01:
+			top = float(beam[0]["score"])
+			top_depth = depth
 		if trace.is_valid():
 			trace.call(depth, beam[0])
 	return {"found": false, "actions": PackedByteArray(), "ticks": steps * hold,
@@ -214,4 +226,4 @@ func _search_ride(from: Variant, course: DotBotSurfCourse, sim: Variant) -> Dict
 
 
 func describe() -> Dictionary:
-	return {"width": width, "hold": hold, "cell": cell, "speed_bucket": speed_bucket, "seconds": seconds, "expanded": expanded}
+	return {"width": width, "hold": hold, "cell": cell, "speed_bucket": speed_bucket, "seconds": seconds, "stall_seconds": stall_seconds, "expanded": expanded}
