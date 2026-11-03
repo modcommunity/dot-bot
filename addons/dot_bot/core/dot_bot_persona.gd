@@ -41,6 +41,11 @@ static func schema() -> Array:
 	return out
 
 
+## Kind to schema for dot-profile's profile_check.
+static func profile_schemas() -> Dictionary:
+	return {KIND: {"schema": schema(), "children": {}}}
+
+
 ## A persona from [param values] (a profile's `values` dictionary); unknown keys are ignored.
 static func from_values(p_id: String, values: Dictionary) -> DotBotPersona:
 	var out := DotBotPersona.new()

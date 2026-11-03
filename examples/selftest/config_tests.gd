@@ -327,6 +327,7 @@ func _test_personas() -> void:
 	for f: Dictionary in DotBotPersona.schema():
 		schema_names.append(f["name"])
 	_check(schema_names.has("hunt") and schema_names.has("support") and schema_names.has("weight") and schema_names.has("skill"), "the profile schema names the mix, weight and skill")
+	_check(DotBotPersona.profile_schemas().has("bot"), "profile_check finds the bot kind")
 	_done()
 
 
