@@ -25,6 +25,18 @@ var avoid_body: float = 1.8
 ## [method bake_in_background] counts the time it spent on its thread.
 var bake_ms: float = 0.0
 
+## Opt-in bake cache: a directory (usually under `user://`) and a map id. With both set, a bake
+## whose geometry digest matches the file for that id loads the mesh instead of baking it; a
+## different digest rebakes and replaces the file. Empty [member cache_dir] is off.
+var cache_dir: String = ""
+var cache_id: String = ""
+## Whether the last bake took its mesh from the cache.
+var last_bake_cached: bool = false
+
+const CACHE_FORMAT := 1
+const CACHE_META := &"dot_bot_nav_cache"
+
+var _cache_digest: String = ""
 var _started: int = 0
 ## The root last baked, for [method find_drops]'s clearance rays.
 var _root: Node3D = null
@@ -63,6 +75,8 @@ func bake(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = [
 	var parsed := _parse(root, agent, mask, bodies)
 	if not parsed.ok:
 		return parsed
+	if _cache_load(parsed.value):
+		return _take_in()
 	NavigationServer3D.bake_from_source_geometry_data(mesh, parsed.value)
 	return _take_in()
 
@@ -73,8 +87,10 @@ func bake_in_background(root: Node3D, agent: Dictionary = {}, mask: int = 0, bod
 	var parsed := _parse(root, agent, mask, bodies)
 	if not parsed.ok:
 		return parsed
-	if not DotPlatform.has_threads():
-		NavigationServer3D.bake_from_source_geometry_data(mesh, parsed.value)
+	var cached := _cache_load(parsed.value)
+	if cached or not DotPlatform.has_threads():
+		if not cached:
+			NavigationServer3D.bake_from_source_geometry_data(mesh, parsed.value)
 		var res := _take_in()
 		if done.is_valid():
 			done.call(res)
@@ -109,6 +125,8 @@ func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotRes
 
 	_started = Time.get_ticks_usec()
 	_root = root
+	last_bake_cached = false
+	_cache_digest = ""
 	mesh = NavigationMesh.new()
 	_poly_grid.clear()
 	mesh.cell_size = CELL
@@ -144,6 +162,61 @@ func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotRes
 	return DotResult.success(source)
 
 
+## Where this map's cache file lives, or "" when the cache is off.
+func cache_path() -> String:
+	if cache_dir.is_empty() or cache_id.is_empty():
+		return ""
+	return cache_dir.path_join(cache_id.validate_filename() + ".nav.res")
+
+
+## Fingerprint of everything the bake depends on: the parsed triangles, the agent and cell sizes, the avoid boxes.
+func _digest_of(source: NavigationMeshSourceGeometryData3D) -> String:
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(source.get_vertices().to_byte_array())
+	ctx.update(source.get_indices().to_byte_array())
+	var params := PackedFloat32Array([CACHE_FORMAT, mesh.cell_size, mesh.cell_height, mesh.agent_radius,
+		mesh.agent_height, mesh.agent_max_climb, mesh.agent_max_slope, mesh.region_min_size, avoid_body])
+	for box in avoid:
+		params.append_array(PackedFloat32Array([box.position.x, box.position.y, box.position.z, box.size.x, box.size.y, box.size.z]))
+	ctx.update(params.to_byte_array())
+	return ctx.finish().hex_encode()
+
+
+## Takes [member mesh] from the cache file when its digest matches; a stale file is deleted. True on a hit.
+func _cache_load(source: NavigationMeshSourceGeometryData3D) -> bool:
+	var path := cache_path()
+	if path.is_empty():
+		return false
+	_cache_digest = _digest_of(source)
+	if not FileAccess.file_exists(path):
+		return false
+	var found := ResourceLoader.load(path, "NavigationMesh", ResourceLoader.CACHE_MODE_IGNORE) as NavigationMesh
+	var meta: Variant = found.get_meta(CACHE_META, {}) if found != null else {}
+	if found == null or not meta is Dictionary or meta.get("digest", "") != _cache_digest or found.get_polygon_count() == 0:
+		DotLog.debug(CHANNEL, "bake cache stale", {"id": cache_id})
+		DirAccess.remove_absolute(path)
+		return false
+	mesh = found
+	last_bake_cached = true
+	DotLog.debug(CHANNEL, "bake cache hit", {"id": cache_id})
+	return true
+
+
+func _cache_store() -> void:
+	var path := cache_path()
+	if path.is_empty() or _cache_digest.is_empty() or last_bake_cached:
+		return
+	var made := DirAccess.make_dir_recursive_absolute(cache_dir)
+	mesh.set_meta(CACHE_META, {"digest": _cache_digest, "format": CACHE_FORMAT})
+	var err := ResourceSaver.save(mesh, path) if made == OK else made
+	mesh.remove_meta(CACHE_META)
+	if err != OK:
+		DotLog.warn(CHANNEL, "bake cache not written", {"path": path, "error": error_string(err)})
+		return
+	DotWeb.sync_filesystem()
+
+
 ## Hands the baked [member mesh] to a navigation map of its own.
 func _take_in() -> DotResult:
 	if mesh.get_polygon_count() == 0:
@@ -168,6 +241,7 @@ func _take_in() -> DotResult:
 	NavigationServer3D.map_force_update(_map)
 	_index_areas()
 
+	_cache_store()
 	bake_ms = (Time.get_ticks_usec() - _started) / 1000.0
 	DotLog.debug(CHANNEL, "baked", {"polygons": mesh.get_polygon_count(), "ms": snappedf(bake_ms, 0.1)})
 	return DotResult.success(mesh.get_polygon_count())

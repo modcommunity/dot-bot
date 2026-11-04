@@ -3,14 +3,14 @@ extends "res://examples/selftest/config_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 325
+const CHECKS := 333
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 37
+const SECTIONS := 38
 
 
 func _ready() -> void:
@@ -41,6 +41,7 @@ func _run() -> void:
 	_test_unstick()
 	_test_route()
 	await _test_nav()
+	await _test_nav_cache()
 	_test_surf()
 	await _test_ride_edges()
 	await _test_links()
@@ -554,6 +555,80 @@ func _test_nav() -> void:
 	for i in 60:
 		await get_tree().process_frame
 	_check(stale.is_empty() and not nav.is_baked() and not nav.is_baking(), "a bake cleared before it lands is dropped", str(stale))
+	root.queue_free()
+	_done()
+
+
+## The opt-in bake cache: off by default, a hit on the same geometry, a rebake when the geometry changes.
+func _test_nav_cache() -> void:
+	_section("nav cache: off by default, hit on the same geometry, invalidated when it changes")
+	var dir := "user://dot_bot_nav_cache_test"
+	var agent := {"radius": 0.35, "height": 1.0, "climb": 0.4}
+	var root := Node3D.new()
+	add_child(root)
+	var body := StaticBody3D.new()
+	root.add_child(body)
+	var floor_shape := CollisionShape3D.new()
+	var floor_box := BoxShape3D.new()
+	floor_box.size = Vector3(20.0, 0.2, 20.0)
+	floor_shape.shape = floor_box
+	floor_shape.position = Vector3(0.0, -0.1, 0.0)
+	body.add_child(floor_shape)
+	await get_tree().physics_frame
+
+	var plain := DotBotNav.new()
+	_check(plain.cache_path().is_empty() and plain.bake(root, agent).ok and not plain.last_bake_cached, "off by default: no path, no cache hit")
+
+	var nav := DotBotNav.new()
+	nav.cache_dir = dir
+	nav.cache_id = "toy map"
+	DirAccess.remove_absolute(nav.cache_path())
+	var first := nav.bake(root, agent)
+	var polygons := nav.mesh.get_polygon_count()
+	_check(first.ok and not nav.last_bake_cached and FileAccess.file_exists(nav.cache_path()), "a first bake misses and writes the file")
+
+	var again := DotBotNav.new()
+	again.cache_dir = dir
+	again.cache_id = "toy map"
+	var hit := again.bake(root, agent)
+	_check(hit.ok and again.last_bake_cached and again.mesh.get_polygon_count() == polygons, "the same geometry hits and gives the same mesh", str(again.mesh.get_polygon_count()))
+	_check(again.is_ready() and again.path_length(Vector3(-5.0, 0.0, -5.0), Vector3(5.0, 0.0, 5.0)) < INF, "a cached mesh answers paths")
+
+	var landed: Array = []
+	var bg := DotBotNav.new()
+	bg.cache_dir = dir
+	bg.cache_id = "toy map"
+	var _started := bg.bake_in_background(root, agent, 0, [], func(res: DotResult) -> void: landed.append(res.ok))
+	for i in 600:
+		if not landed.is_empty():
+			break
+		await get_tree().process_frame
+	_check(landed == [true] and bg.last_bake_cached, "a background bake of a cached map lands from the cache")
+
+	var wall := CollisionShape3D.new()
+	var wall_box := BoxShape3D.new()
+	wall_box.size = Vector3(0.4, 3.0, 12.0)
+	wall.shape = wall_box
+	wall.position = Vector3(0.0, 1.5, 0.0)
+	body.add_child(wall)
+	await get_tree().physics_frame
+	var changed := DotBotNav.new()
+	changed.cache_dir = dir
+	changed.cache_id = "toy map"
+	var rebaked := changed.bake(root, agent)
+	_check(rebaked.ok and not changed.last_bake_cached and changed.mesh.get_polygon_count() != polygons, "changed geometry misses and rebakes", "%d vs %d" % [changed.mesh.get_polygon_count(), polygons])
+
+	var after := DotBotNav.new()
+	after.cache_dir = dir
+	after.cache_id = "toy map"
+	_check(after.bake(root, agent).ok and after.last_bake_cached, "the file was replaced: the new geometry now hits")
+
+	var other := DotBotNav.new()
+	other.cache_dir = dir
+	other.cache_id = "other map"
+	_check(other.bake(root, agent).ok and not other.last_bake_cached, "another map id has its own file")
+	DirAccess.remove_absolute(nav.cache_path())
+	DirAccess.remove_absolute(other.cache_path())
 	root.queue_free()
 	_done()
 
