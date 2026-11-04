@@ -199,7 +199,9 @@ func join(nav: DotBotNav) -> Dictionary:
 		stats["drops"] = dropped
 		hopped = nav.find_hops(HOP_ID) if drops else 0
 		stats["hops"] = hopped
+		nav.begin_batch()
 		stats["stitches"] = nav.find_stitches(STITCH_ID) if drops else 0
+		nav.end_batch()
 	joined = stats
 	return stats
 

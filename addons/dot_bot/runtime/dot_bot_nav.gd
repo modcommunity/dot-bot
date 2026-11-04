@@ -406,6 +406,9 @@ func _index_areas() -> void:
 ## How far a ride edge's ends may be from the mesh and still join it, metres.
 const LINK_RADIUS := 1.5
 
+var _batching := false
+var _batch_dirty := false
+
 ## Adds a one-way edge from [param from] to [param to] that is ridden, not walked (a surf ramp, a drop), under [param id]; [method route] crosses it when cheaper and says where. [param cost] scales its length. Kept across a re-bake; [method clear_rides] drops them.
 ## It is a navigation link because the bake leaves out faces steeper than the slope limit, so surf maps are islands.
 func add_ride(from: Vector3, to: Vector3, id: int, cost: float = 1.0) -> void:
@@ -414,7 +417,22 @@ func add_ride(from: Vector3, to: Vector3, id: int, cost: float = 1.0) -> void:
 	_ride_graph = null
 	if _map.is_valid():
 		_link(ride)
+		if _batching:
+			_batch_dirty = true
+		else:
+			NavigationServer3D.map_force_update(_map)
+
+
+## Holds back the server's map update until [method end_batch], for a run of [method add_ride] calls: each update costs time in the size of the whole map.
+func begin_batch() -> void:
+	_batching = true
+
+
+func end_batch() -> void:
+	_batching = false
+	if _batch_dirty and _map.is_valid():
 		NavigationServer3D.map_force_update(_map)
+	_batch_dirty = false
 
 
 ## The ride edges added, as `{"id", "from", "to", "cost"}`.
@@ -436,7 +454,10 @@ func clear_rides() -> void:
 ## Adds one-way drop edges from the mesh's open borders down to lower floor, id [param first_id] up, one per [param spacing] metres of rim, at most [param limit]; returns how many.
 ## A landing is the nearest mesh point below the rim, kept only when it lies under the probe and physics rays out and down hit nothing.
 func find_drops(first_id: int, min_drop: float = 1.2, max_drop: float = 24.0, spacing: float = 4.0, limit: int = 400, cost: float = 2.0) -> int:
-	return _find_edges(first_id, [0.9, 1.6], min_drop, max_drop, spacing, limit, cost, false)
+	begin_batch()
+	var n := _find_edges(first_id, [0.9, 1.6], min_drop, max_drop, spacing, limit, cost, false)
+	end_batch()
+	return n
 
 
 ## Adds one-way hop edges from the mesh's rims across a gap to another island's floor (at most 0.9 m higher, any
@@ -448,7 +469,10 @@ func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 1.5, limit:
 	while gap <= max_gap + 0.01:
 		reaches.append(gap)
 		gap += 0.75
-	return _find_edges(first_id, reaches, -0.9, 24.0, spacing, limit, cost, true)
+	begin_batch()
+	var n := _find_edges(first_id, reaches, -0.9, 24.0, spacing, limit, cost, true)
+	end_batch()
+	return n
 
 
 ## Joins neighbouring islands where their rims come within [param max_gap] metres sideways: the lower rim climbs at most [param max_rise] to the higher, the higher drops to the lower, and a chest-high ray between them is clear.
