@@ -41,7 +41,7 @@ var speed_bucket: float = 1.905
 ## Give up after this many seconds of simulated ride.
 var seconds: float = 20.0
 ## Give up when the beam's best score has not improved for this many seconds of ride (0 = never):
-## a short ride that is not found in a few seconds is not found by running to [member seconds].
+## a short ride not solved in a few seconds will not be solved by running to [member seconds].
 var stall_seconds: float = 8.0
 ## Ticks back from a failure a repair search starts (a second at 128 Hz).
 var repair_back: int = 128

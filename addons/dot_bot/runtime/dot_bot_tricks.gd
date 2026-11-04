@@ -2,14 +2,8 @@ class_name DotBotTricks
 extends RefCounted
 
 ## The movement tricks a bot chains: slide, jump, wall run, wall jump, duck, air-jump.
-##
-## [b]Pressing buttons a person could.[/b] It only sets [member DotBotIntent.crouch],
-## [member DotBotIntent.jump] and [member DotBotIntent.air_jump] (and bends the move while a wall
-## is being run), so the motor refuses what a body cannot do, and a game that has a trick off is
-## simply never reported its precondition ([member DotBotContact.air_jump_ready]).
-## [b]Difficulty is the profile.[/b] How often (slide, wall_run, air_jump, cover_crouch), how well
-## chained (trick_chain) and how fast to start (trick_delay) are SPEC rows; the dice are the
-## brain's own seeded stream, so two bots on one map do not run the same wall the same way.
+## It only presses buttons a person could ([member DotBotIntent.crouch], jump, air_jump), so the
+## motor refuses what a body cannot do; frequency and timing are SPEC rows on a seeded stream.
 
 ## Default flat speeds below which no slide or wall run is tried: the motor needs about this much.
 const SLIDE_SPEED := 6.5
