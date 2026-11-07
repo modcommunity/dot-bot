@@ -4,12 +4,16 @@ extends RefCounted
 ## Turns recorded ride episodes into verified ones: replays each on the host's simulator from its start and keeps it only if it lands where the player did.
 ##
 ## The host is duck typed: [code]replay_start[/code], [code]replay_command[/code], [code]landing[/code] and optionally [code]perturb[/code]; the simulator has [code]step[/code] and [code]delta[/code]. A ride is kept when the replay lands and enough perturbed starts ([member DotBotRideConfig.min_score]) do too.
+##
+## [b]Piloted replay[/b] (host method [code]pilot_setup(pilot, episode)[/code], [member DotBotRideConfig.piloted]): the commands are quantised to pilot actions ([DotBotRideQuantiser]) and a [DotBotSurfPilot] with the ride as its only cache, tracking and vetoing, rides the simulator. That is what a bot does with the ride, so a line the pilot cannot follow is rejected however well the player flew it. The simulator must return [DotBotSurfCourse] events for the veto. Without [code]pilot_setup[/code] the recorded commands are replayed open loop.
 
 const CHANNEL := "bot.ride.harvest"
 
 const GOING := 0
 const LANDED := 1
 const FAILED := -1
+## Only a [class Run] in progress.
+const RUNNING := 2
 
 ## Marks a rejected episode when [member DotBotRideConfig.keep_rejected] keeps it.
 const REJECTED_SCORE := -1.0
@@ -24,6 +28,10 @@ var rejected: int = 0
 var replaced: int = 0
 var turned_away: int = 0
 var replays: int = 0
+var piloted_replays: int = 0
+
+var _pilot_ep: Variant = null
+var _pilot: DotBotSurfPilot = null
 
 
 func _init(p_config: DotBotRideConfig, p_schema: Variant, p_sim: Variant, p_host: Variant) -> void:
@@ -43,8 +51,87 @@ func ready() -> DotResult:
 	return DotResult.success(true)
 
 
+## Whether replays go through the pilot: the config says so and the host can set one up.
+func is_piloted() -> bool:
+	return config.piloted and host != null and host.has_method(&"pilot_setup")
+
+
 ## One replay of [param ep] from [param state]: [constant LANDED], [constant FAILED] or [constant GOING] if it ran out of ticks.
 func replay(ep: Variant, state: Variant) -> int:
+	return begin_replay(ep, state).advance(0, 0)
+
+
+## A replay of [param ep] that [method Run.advance] steps a slice at a time. An open loop replay is not sliced: its run is already finished.
+func begin_replay(ep: Variant, state: Variant) -> Run:
+	if not is_piloted():
+		var open := Run.new()
+		open.verdict = replay_open(ep, state)
+		return open
+	return _begin_piloted(ep, state)
+
+
+## [method replay] with the pilot riding the quantised ride, tracking and vetoing, one command a simulator tick.
+func replay_piloted(ep: Variant, state: Variant) -> int:
+	return _begin_piloted(ep, state).advance(0, 0)
+
+
+func _begin_piloted(ep: Variant, state: Variant) -> Run:
+	replays += 1
+	piloted_replays += 1
+	var delta: float = float(sim.get("delta")) if sim.get("delta") != null else 0.0
+	var hold := 1 if delta <= 0.0 or ep.rate <= 0.0 else maxi(1, roundi(1.0 / (delta * ep.rate)))
+	if _pilot_ep != ep or _pilot == null:
+		_pilot_ep = ep
+		_pilot = DotBotRideQuantiser.pilot_for(ep, schema, sim, Callable(host, &"pilot_setup"), config.pilot_tracking, config.pilot_horizon, hold)
+	var run := Run.new()
+	run.harvest = self
+	run.ep = ep
+	if _pilot.size() == 0:
+		run.verdict = FAILED
+		return run
+	_pilot.reset()
+	run.pilot = _pilot
+	run.state = state.duplicate_state()
+	run.left = ep.sample_count() * hold + config.settle_ticks
+	return run
+
+
+## One piloted replay in progress. [method advance] runs it a few simulator steps at a time; the verdict is the same however it is sliced.
+class Run:
+	extends RefCounted
+
+	## The verdict once finished, [constant RUNNING] before.
+	var verdict: int = RUNNING
+	var steps: int = 0
+	var harvest: DotBotRideHarvest
+	var ep: Variant
+	var pilot: DotBotSurfPilot
+	var state: Variant
+	var left: int = 0
+
+	## Steps until [param deadline_usec] (0 for no time limit) or [param max_steps] (0 for no step limit): [constant RUNNING] if either stopped it, else the verdict. At least one step runs.
+	func advance(deadline_usec: int, max_steps: int) -> int:
+		var done := 0
+		while verdict == RUNNING:
+			if left <= 0:
+				verdict = GOING
+				break
+			left -= 1
+			steps += 1
+			done += 1
+			var event: int = harvest.sim.step(state, pilot.command(state))
+			var landed: int = harvest.host.landing(state, event, ep)
+			if landed != GOING:
+				verdict = landed
+			elif event != 0:
+				verdict = FAILED
+			if verdict == RUNNING and ((max_steps > 0 and done >= max_steps) or (deadline_usec > 0 and Time.get_ticks_usec() >= deadline_usec)):
+				return RUNNING
+		return verdict
+
+
+## [method replay] on the recorded commands themselves.
+func replay_open(ep: Variant, state: Variant) -> int:
 	replays += 1
 	var fs: int = ep.frame_size
 	var obs: int = schema.observation_size()
@@ -134,7 +221,7 @@ func commit(store: Variant, existing: Array, verdicts: Array) -> DotResult:
 
 
 func describe() -> Dictionary:
-	return {"verified": verified, "rejected": rejected, "replaced": replaced, "turned_away": turned_away, "replays": replays}
+	return {"verified": verified, "rejected": rejected, "replaced": replaced, "turned_away": turned_away, "replays": replays, "piloted_replays": piloted_replays}
 
 
 func describe_lines() -> PackedStringArray:

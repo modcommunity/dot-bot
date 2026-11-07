@@ -37,8 +37,8 @@ func add_seeded(key: String, score: float, data: Variant = null, id: int = 0) ->
 	_add(key, {"id": id, "source": SEEDED, "score": score, "data": data})
 
 
-## Replaces an edge's recordings with the verified ones in [param store]; the value is how many.
-func load_edge(store: Variant, kind: String, key: String, schema: Variant, tick_rate: float) -> DotResult:
+## Replaces an edge's recordings with the verified ones in [param store]; the value is how many. With a [param reference_yaw] (the edge's course) each recording also carries the pilot cache it was verified as, `data["cache"]` and `data["reference_yaw"]`, which [method DotBotSurfRide.begin_picked] rides in place of replaying the raw commands.
+func load_edge(store: Variant, kind: String, key: String, schema: Variant, tick_rate: float, reference_yaw: float = NAN) -> DotResult:
 	var loaded: DotResult = await store.load(map_id, map_version, kind, key, config.cap)
 	if not loaded.ok:
 		return loaded
@@ -53,8 +53,12 @@ func load_edge(store: Variant, kind: String, key: String, schema: Variant, tick_
 		for i in ep.sample_count():
 			actions.append_array(ep.ticks.slice(i * ep.frame_size + obs, (i + 1) * ep.frame_size))
 		var hold := 1 if ep.rate <= 0.0 else maxi(1, roundi(tick_rate / ep.rate))
-		kept.append({"id": ep.id, "source": RECORDED, "score": ep.score,
-			"data": {"actions": actions, "action_size": schema.action_size(), "hold": hold}})
+		var data := {"actions": actions, "action_size": schema.action_size(), "hold": hold}
+		if not is_nan(reference_yaw):
+			data["cache"] = DotBotRideQuantiser.entries(ep, schema, reference_yaw, hold)
+			data["reference_yaw"] = reference_yaw
+			data["tracking"] = config.pilot_tracking
+		kept.append({"id": ep.id, "source": RECORDED, "score": ep.score, "data": data})
 		n += 1
 	return DotResult.success(n)
 

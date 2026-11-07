@@ -15,8 +15,19 @@ extends DotConfig
 ## Ticks a replay may run past the recorded ride before it counts as not landing.
 @export var settle_ticks: int = 96
 
+## Replay through the pilot (quantised actions, tracking, veto) when the host has pilot_setup; off replays the recorded commands open loop.
+@export var piloted: bool = true
+
+## The pilot's tracking while it replays a ride, and how far its veto looks ahead (ticks; 0 turns the veto off).
+## A bot rides a recording with the tracking it was verified with (the ride book stores it). Off by default: tracking cannot follow a ride a planner flew on a synthetic simulator.
+@export var pilot_tracking: bool = false
+@export var pilot_horizon: int = 192
+
 ## Longest a harvest job step may run, milliseconds.
 @export var budget_msec: float = 2.0
+
+## Most simulator steps a harvest job runs in one tick, besides the time budget; 0 is the time budget alone.
+@export var slice_steps: int = 0
 
 ## A verified ride scoring under this is rejected.
 @export var min_score: float = 0.0
@@ -49,7 +60,7 @@ func cli_prefix() -> String:
 
 
 func validate() -> DotResult:
-	if starts < 0 or settle_ticks < 0 or top < 1 or cap < 1 or target < 1:
+	if starts < 0 or settle_ticks < 0 or pilot_horizon < 0 or slice_steps < 0 or top < 1 or cap < 1 or target < 1:
 		return DotResult.fail(DotError.CODE_INVALID, "harvest starts and settle_ticks are 0 or more; top, cap and target are 1 or more.")
 	if budget_msec <= 0.0 or perturb_metres < 0.0 or perturb_speed < 0.0 or floor_weight < 0.0:
 		return DotResult.fail(DotError.CODE_INVALID, "harvest budget_msec must be above 0; perturbation and floor_weight 0 or more.")
