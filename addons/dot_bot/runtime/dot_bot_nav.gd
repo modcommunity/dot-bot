@@ -641,6 +641,10 @@ func _drop_landing(rim: Vector3, out: Vector3, min_drop: float, max_drop: float,
 				continue
 			var ground: Vector3 = hit["position"]
 			var spot := NavigationServer3D.map_get_closest_point(_map, ground)
+			# the nearest mesh can lie behind a wall the column stopped short of
+			var chest := Vector3(0.0, 0.5, 0.0)
+			if not space.intersect_ray(PhysicsRayQueryParameters3D.create(ground + chest, spot + chest)).is_empty():
+				continue
 			if rim.y - spot.y >= min_drop and rim.y - spot.y <= max_drop and Vector2(spot.x - ground.x, spot.z - ground.z).length() < 0.6 \
 					and absf(spot.y - ground.y) < 0.8 and (not_island == -2 or island_at(spot) != not_island):
 				return spot

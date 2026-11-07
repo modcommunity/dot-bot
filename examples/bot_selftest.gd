@@ -44,6 +44,7 @@ func _run() -> void:
 	await _test_nav_cache()
 	_test_surf()
 	await _test_ride_edges()
+	await _test_drop_behind_wall()
 	await _test_links()
 	await _test_stitches()
 	await _test_unlock_export()
