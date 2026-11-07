@@ -13,7 +13,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | [docs/README.md](docs/README.md) | the index |
 | [docs/design.md](docs/design.md) | why a separate addon, what the brain may know, the fight, the view, determinism |
 | [docs/surfing.md](docs/surfing.md) | anything in `runtime/surf/`, ride edges, `DotBotIntent.ride` |
-| [docs/demonstration-recorder.md](docs/demonstration-recorder.md) | recording players for bots to learn from; the recorder itself is the addon [dot-bot-record](../dot-bot-record/CLAUDE.md), the ride harvest and `DotBotDemoHeatmap` here are built, aim statistics are not |
+| [docs/demonstration-recorder.md](docs/demonstration-recorder.md) | recording players for bots to learn from; the recorder itself is the addon [dot-bot-record](../dot-bot-record/CLAUDE.md), the ride harvest and `DotBotDemoHeatmap` and `DotBotAimStats` here are built |
 | [docs/presets.md](docs/presets.md) | changing a preset's number or adding a setting; what each preset is meant to be, and the measured numbers |
 | [docs/history.md](docs/history.md) | the bugs, and how each looked |
 
@@ -29,6 +29,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 | `addons/dot_bot/runtime/dot_bot_world.gd` | `DotBotWorld`: all a brain may know (bodies, line of sight, waypoints, sounds) |
 | `addons/dot_bot/runtime/dot_bot_aim.gd` | `DotBotAim`: the view, the aim error, the reaction and the trigger; the brain's, and a game with its own decisions uses it alone |
 | `addons/dot_bot/runtime/dot_bot_brain.gd` | `DotBotBrain`: perceive, then fight, search, listen or roam |
+| `addons/dot_bot/runtime/dot_bot_aim_stats.gd`, `tools/aim_suggest.gd` | `DotBotAimStats`: `engage` episodes folded into percentile sketches (cheat floor, `include_fn`), `suggest` onto `DotBotProfile.SPEC`; the tool prints the suggested table from a JSON store for a person to review |
 | `addons/dot_bot/runtime/dot_bot_pickup.gd` | `DotBotPickup`: a quiet bot fetches a better weapon lying about with the use key (`bot_pickup_weapons`, `bot_pickup_range`); [design](docs/design.md) |
 | `addons/dot_bot/runtime/dot_bot_arms.gd` | `DotBotArms`: damage-per-second weapon rating, `loadout_of(arsenal)` for `DotBotContact.loadout`, `wire(world, drops_source, arsenal_source)` for `drops_fn`; duck typed over dot-weapon's arsenal and drops, so a game wires pickup in two lines |
 | `addons/dot_bot/runtime/dot_bot_tricks.gd` | `DotBotTricks`: slide, slide-jump, wall run, wall jump, cover duck and the air-jump, by scenario and `bot_slide`, `bot_wall_run`, `bot_air_jump`, `bot_trick_chain`, `bot_trick_delay`, `bot_cover_crouch`; [design](docs/design.md#movement-tricks) |

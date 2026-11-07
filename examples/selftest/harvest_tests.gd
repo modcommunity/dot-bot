@@ -341,3 +341,69 @@ func _test_heatmap() -> void:
 	var res: DotResult = await fed.fold_store(store, "hm_toy", "v1", ["red"], 100, "2026-11-05")
 	_check(res.ok and res.value == 3 and fed.weight_at(a) == 60.0, "folded from a store", str(res.value))
 	_done()
+
+
+## An `engage` episode at 10 Hz of 20 frames (error, fired, tracking): the first shot at tick [param shot], a steady error.
+func _engage_episode(label: String, shot: int, err: float, track: float = 2.0, outcome: String = "kill") -> DotBotDemoEpisode:
+	var e := _demo_episode("aim_toy", "v1", "engage", label)
+	e.rate = 10.0
+	e.frame_size = 3
+	e.outcome = outcome
+	var rows := PackedFloat32Array()
+	for i in 20:
+		rows.append_array(PackedFloat32Array([err, 1.0 if i >= shot else 0.0, track]))
+	e.ticks = rows
+	return e
+
+
+func _test_aim_stats() -> void:
+	_section("demo aim stats: percentile sketches, the cheat floor, suggest onto SPEC")
+	var stats := DotBotAimStats.new()
+	stats.track_index = 2
+	for r in range(2, 10):
+		for _j in 5:
+			_check(stats.fold(_engage_episode("arena", r, 2.0 + r * 0.5)), "an engagement folds")
+	_check(stats.episode_count() == 40 and stats.episode_count("arena") == 40 and stats.episode_count("zone") == 0, "forty folded, counted per label")
+	var p50 := stats.percentile("reaction", 50.0)
+	_check(p50 > 0.5 and p50 < 0.6, "the median of 0.2 to 0.9 s is about 0.55", str(p50))
+	_check(stats.percentile("reaction", 20.0) < p50 and p50 < stats.percentile("reaction", 80.0), "percentiles rise")
+	_check(absf(stats.percentile("time_to_kill", 50.0) - 2.0) < 0.02, "a kill's length is its time to kill", str(stats.percentile("time_to_kill", 50.0)))
+	var fast := _engage_episode("arena", 0, 3.0)
+	var tight := _engage_episode("arena", 4, 0.01)
+	var miss := _engage_episode("arena", 99, 3.0)
+	_check(not stats.fold(fast) and not stats.fold(tight) and stats.dropped == 2, "a reaction under 0.1 s and an error under the floor are dropped as cheats")
+	_check(not stats.fold(miss) and stats.dropped == 2 and stats.episode_count() == 40, "no shot fired is refused, not a cheat")
+	var other := _engage_episode("arena", 4, 3.0)
+	other.map_version = "v2"
+	var ride := _engage_episode("arena", 4, 3.0)
+	ride.kind = "ride"
+	_check(not stats.fold(other) and not stats.fold(ride), "another map version or kind is refused")
+	var filtered := DotBotAimStats.new()
+	filtered.include_fn = func(ep: DotBotDemoEpisode) -> bool: return ep.outcome != "flagged"
+	_check(not filtered.fold(_engage_episode("arena", 4, 3.0, 2.0, "flagged")) and filtered.dropped == 1 and filtered.fold(_engage_episode("arena", 4, 3.0)), "include_fn drops a flagged session")
+	_check(is_nan(filtered.percentile("reaction", 50.0)) and filtered.suggest().is_empty(), "too few episodes gives no percentile and no suggestion")
+	var table := stats.suggest()
+	var easy: Dictionary = table["easy"]
+	var medium: Dictionary = table["medium"]
+	var hard: Dictionary = table["hard"]
+	_check(not table.has("nightmare") and easy["reaction"] > medium["reaction"] and medium["reaction"] > hard["reaction"], "easy is slower than medium than hard")
+	_check(absf(medium["reaction"] - p50) < 0.05 and easy["aim_error"] > hard["aim_error"], "medium sits at the median, easy aims worse than hard")
+	_check(hard["reaction"] >= 0.12 and hard["aim_floor"] >= 0.3, "no preset is harder than nightmare's own floor", str(hard))
+	var quick := DotBotAimStats.new()
+	quick.track_index = 2
+	for _i in 40:
+		var _f := quick.fold(_engage_episode("arena", 1, 0.5, 0.1))
+	var clamped: Dictionary = quick.suggest()["hard"]
+	_check(clamped["reaction"] == 0.12 and clamped["aim_floor"] == 0.3 and clamped["aim_error"] >= 1.2, "people faster than nightmare are clamped to its numbers", str(clamped))
+	_check(quick.percentiles().has("reaction") and (quick.percentiles()["reaction"] as Dictionary).has("p80"), "percentiles for a consumer that wants numbers")
+	var lines := stats.suggest_lines()
+	_check(lines.size() == 10 and lines[0].begins_with("field"), "the printed table is a header and nine rows", str(lines.size()))
+	var store := DotBotDemoStoreMemory.new()
+	var batch := []
+	for _i in 35:
+		batch.append(_engage_episode("arena", 5, 3.0))
+	var _ap := await store.append(batch)
+	var fed := DotBotAimStats.new()
+	var res: DotResult = await fed.fold_store(store, "aim_toy", "v1", ["arena"])
+	_check(res.ok and res.value == 35 and fed.percentile("reaction", 50.0) > 0.45, "folded from a store", str(res.value))
+	_done()
