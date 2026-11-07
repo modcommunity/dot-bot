@@ -343,6 +343,8 @@ func _test_drop_behind_wall() -> void:
 	_check(baked.ok and Vector2(near_mesh.x - 1.0, near_mesh.z).length() < 0.6, "the mesh starts within 0.6 m of the column, behind the wall", str(near_mesh))
 	var landing := nav._drop_landing(rim, Vector3.RIGHT, 0.9, 24.0, [0.9])
 	_check(landing == Vector3.INF, "so the drop finds no landing", str(landing))
+	_check(nav._buried(Vector3(1.175, 0.13, 0.0)) and not nav._buried(Vector3(-1.0, 0.0, 0.0)) and not nav._buried(Vector3(3.0, 0.0, 0.0)),
+		"a point inside the wall is buried, one on either floor is not")
 	nav.clear()
 	root.queue_free()
 	_done()
