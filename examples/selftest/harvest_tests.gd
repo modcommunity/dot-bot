@@ -288,3 +288,317 @@ func _test_ride_pick() -> void:
 	state.position.x = 10.5
 	_check(ride.steer(state, intent, 7) == DotBotSurfRide.LANDED and ride.describe()["source"] == "recorded", "and it ends in the goal")
 	_done()
+
+
+func _place_episode(label: String, day: String, at: Vector3, fight: float = 0.0, ticks: int = 80) -> DotBotDemoEpisode:
+	var e := _demo_episode("hm_toy", "v1", "place", label)
+	e.day = day
+	e.rate = 4.0
+	e.frame_size = 4
+	var rows := PackedFloat32Array()
+	for _i in ticks:
+		rows.append_array(PackedFloat32Array([at.x, at.y, at.z, fight]))
+	e.ticks = rows
+	return e
+
+
+func _test_heatmap() -> void:
+	_section("demo heatmap: 1 Hz on a 2 m grid, a minimum count, decay, weighted waypoints")
+	var map := DotBotDemoHeatmap.new()
+	map.fight_index = 3
+	var a := Vector3(3.0, 0.0, 3.0)
+	var b := Vector3(21.0, 0.0, 21.0)
+	var c := Vector3(-30.0, 0.0, 5.0)
+	for i in 3:
+		_check(map.fold(_place_episode("red", "2026-11-05", a, 1.0 if i == 0 else 0.0), "2026-11-05"), "an episode folds")
+	var _lone := map.fold(_place_episode("red", "2026-11-05", b), "2026-11-05")
+	_check(map.weight_at(a) == 60.0, "80 ticks at 4 Hz are 20 samples, 60 over three episodes", str(map.weight_at(a)))
+	_check(map.weight_at(Vector3(3.9, 5.0, 2.1)) == 60.0 and map.weight_at(Vector3(4.1, 0.0, 3.0)) == 0.0, "the cell is 2 m square and ignores height")
+	_check(map.weight_at(b) == 0.0, "a cell one player stood in is not used")
+	_check(absf(map.fight_share_at(a) - 1.0 / 3.0) < 0.001 and map.fight_share_at(b) == 0.0, "the share of a cell spent in a fight", str(map.fight_share_at(a)))
+	_check(map.weight_at(a, "red") == 60.0 and map.weight_at(a, "blue") == 0.0, "a label keeps its own cells")
+	var kinds := _place_episode("red", "2026-11-05", a)
+	kinds.kind = "ride"
+	var other := _place_episode("red", "2026-11-05", a)
+	other.map_version = "v2"
+	_check(not map.fold(kinds) and not map.fold(other) and map.episode_count() == 4, "another kind or map version is refused")
+	var pts := PackedVector3Array([a, b, c])
+	var w := map.weighted(pts, "", 4)
+	_check(w.size() == 6 and w.count(a) == 4 and w.count(b) == 1 and w.count(c) == 1, "waypoints repeat by popularity, an unused place once", str(w.size()))
+	var fn := map.waypoints_fn(pts, "red", 4)
+	_check(fn.is_valid() and (fn.call() as PackedVector3Array).size() == 6, "waypoints_fn is a callable for DotBotWorld")
+	var world := DotBotWorld.new()
+	world.waypoints_fn = fn
+	_check(world.waypoints().size() == 6, "and the world reads it")
+	var old := DotBotDemoHeatmap.new()
+	old.min_episodes = 1
+	var _o1 := old.fold(_place_episode("red", "2026-10-22", a), "2026-11-05")
+	var _o2 := old.fold(_place_episode("red", "2026-11-05", a), "2026-11-05")
+	_check(absf(old.weight_at(a) - 60.0 * 1.5 / 3.0) < 0.01, "a sample 14 days old counts half", str(old.weight_at(a)))
+	var store := DotBotDemoStoreMemory.new()
+	var _ap := await store.append([_place_episode("red", "2026-11-05", a), _place_episode("red", "2026-11-05", a), _place_episode("red", "2026-11-05", a)])
+	var fed := DotBotDemoHeatmap.new()
+	var res: DotResult = await fed.fold_store(store, "hm_toy", "v1", ["red"], 100, "2026-11-05")
+	_check(res.ok and res.value == 3 and fed.weight_at(a) == 60.0, "folded from a store", str(res.value))
+	_done()
+
+
+## An `engage` episode at 10 Hz of 20 frames (error, fired, tracking): the first shot at tick [param shot], a steady error.
+func _engage_episode(label: String, shot: int, err: float, track: float = 2.0, outcome: String = "kill") -> DotBotDemoEpisode:
+	var e := _demo_episode("aim_toy", "v1", "engage", label)
+	e.rate = 10.0
+	e.frame_size = 3
+	e.outcome = outcome
+	var rows := PackedFloat32Array()
+	for i in 20:
+		rows.append_array(PackedFloat32Array([err, 1.0 if i >= shot else 0.0, track]))
+	e.ticks = rows
+	return e
+
+
+func _test_aim_stats() -> void:
+	_section("demo aim stats: percentile sketches, the cheat floor, suggest onto SPEC")
+	var stats := DotBotAimStats.new()
+	stats.track_index = 2
+	for r in range(2, 10):
+		for _j in 5:
+			_check(stats.fold(_engage_episode("arena", r, 2.0 + r * 0.5)), "an engagement folds")
+	_check(stats.episode_count() == 40 and stats.episode_count("arena") == 40 and stats.episode_count("zone") == 0, "forty folded, counted per label")
+	var p50 := stats.percentile("reaction", 50.0)
+	_check(p50 > 0.5 and p50 < 0.6, "the median of 0.2 to 0.9 s is about 0.55", str(p50))
+	_check(stats.percentile("reaction", 20.0) < p50 and p50 < stats.percentile("reaction", 80.0), "percentiles rise")
+	_check(absf(stats.percentile("time_to_kill", 50.0) - 2.0) < 0.02, "a kill's length is its time to kill", str(stats.percentile("time_to_kill", 50.0)))
+	var fast := _engage_episode("arena", 0, 3.0)
+	var tight := _engage_episode("arena", 4, 0.01)
+	var miss := _engage_episode("arena", 99, 3.0)
+	_check(not stats.fold(fast) and not stats.fold(tight) and stats.dropped == 2, "a reaction under 0.1 s and an error under the floor are dropped as cheats")
+	_check(not stats.fold(miss) and stats.dropped == 2 and stats.episode_count() == 40, "no shot fired is refused, not a cheat")
+	var other := _engage_episode("arena", 4, 3.0)
+	other.map_version = "v2"
+	var ride := _engage_episode("arena", 4, 3.0)
+	ride.kind = "ride"
+	_check(not stats.fold(other) and not stats.fold(ride), "another map version or kind is refused")
+	var filtered := DotBotAimStats.new()
+	filtered.include_fn = func(ep: DotBotDemoEpisode) -> bool: return ep.outcome != "flagged"
+	_check(not filtered.fold(_engage_episode("arena", 4, 3.0, 2.0, "flagged")) and filtered.dropped == 1 and filtered.fold(_engage_episode("arena", 4, 3.0)), "include_fn drops a flagged session")
+	_check(is_nan(filtered.percentile("reaction", 50.0)) and filtered.suggest().is_empty(), "too few episodes gives no percentile and no suggestion")
+	var table := stats.suggest()
+	var easy: Dictionary = table["easy"]
+	var medium: Dictionary = table["medium"]
+	var hard: Dictionary = table["hard"]
+	_check(not table.has("nightmare") and easy["reaction"] > medium["reaction"] and medium["reaction"] > hard["reaction"], "easy is slower than medium than hard")
+	_check(absf(medium["reaction"] - p50) < 0.05 and easy["aim_error"] > hard["aim_error"], "medium sits at the median, easy aims worse than hard")
+	_check(hard["reaction"] >= 0.12 and hard["aim_floor"] >= 0.3, "no preset is harder than nightmare's own floor", str(hard))
+	var quick := DotBotAimStats.new()
+	quick.track_index = 2
+	for _i in 40:
+		var _f := quick.fold(_engage_episode("arena", 1, 0.5, 0.1))
+	var clamped: Dictionary = quick.suggest()["hard"]
+	_check(clamped["reaction"] == 0.12 and clamped["aim_floor"] == 0.3 and clamped["aim_error"] >= 1.2, "people faster than nightmare are clamped to its numbers", str(clamped))
+	_check(quick.percentiles().has("reaction") and (quick.percentiles()["reaction"] as Dictionary).has("p80"), "percentiles for a consumer that wants numbers")
+	var lines := stats.suggest_lines()
+	_check(lines.size() == 10 and lines[0].begins_with("field"), "the printed table is a header and nine rows", str(lines.size()))
+	var store := DotBotDemoStoreMemory.new()
+	var batch := []
+	for _i in 35:
+		batch.append(_engage_episode("arena", 5, 3.0))
+	var _ap := await store.append(batch)
+	var fed := DotBotAimStats.new()
+	var res: DotResult = await fed.fold_store(store, "aim_toy", "v1", ["arena"])
+	_check(res.ok and res.value == 35 and fed.percentile("reaction", 50.0) > 0.45, "folded from a store", str(res.value))
+	_done()
+
+
+## A schema of 3 observed and 2 acted floats and an episode for it of [param rows] rows whose values name their episode and row (so a read-back is checked value by value).
+func _bc_schema() -> DotBotDemoSchema:
+	return DotBotDemoSchema.make("ride", 2).add_observation("pos", 2, 10.0).add_observation("speed", 1, 5.0).add_action("thrust", 1, 1.0).add_action("jump", 1, 1.0, true)
+
+
+func _bc_episode(schema: DotBotDemoSchema, id: int, map_id: String, rows: int) -> DotBotDemoEpisode:
+	var e := _demo_episode(map_id, "v1", "ride", "edge_%d" % (id % 3), 0.0, true)
+	e.id = id
+	e.schema_id = schema.schema_id()
+	e.frame_size = schema.frame_size()
+	e.start = {"x": float(id), "air": true}
+	var t := PackedFloat32Array()
+	for r in rows:
+		for c in e.frame_size:
+			t.append(id * 1000.0 + r * 10.0 + c)
+	e.ticks = t
+	return e
+
+
+func _bc_tamper(src: String, dst: String, edit: Callable) -> void:
+	var _rm := await DotPaths.remove_tree(dst)
+	var _mk := DotPaths.ensure_dir(dst)
+	for f in DirAccess.get_files_at(src):
+		DirAccess.copy_absolute(src.path_join(f), dst.path_join(f))
+	var m: Dictionary = DotPaths.read_json(src.path_join("manifest.json")).value
+	edit.call(m)
+	var _w := DotPaths.write_json(dst.path_join("manifest.json"), m)
+
+
+func _test_bc_export() -> void:
+	_section("bc export: manifest and float32 shards, split by episode, read back, untrusted loads")
+	var root := "user://dot_bot_bc_%d" % randi()
+	var schema := _bc_schema()
+	var ex := DotBotDemoExport.new(schema)
+	ex.max_shard_rows = 30
+	var originals := {}
+	for i in 10:
+		var e := _bc_episode(schema, i + 1, "map_a", 4 + i % 3)
+		originals[e.id] = e
+		_check(ex.add(e), "a verified episode of the schema is added")
+	var lone := _bc_episode(schema, 20, "map_b", 5)
+	var unverified := _bc_episode(schema, 21, "map_a", 5)
+	unverified.verified = false
+	var other := _bc_episode(schema, 22, "map_a", 5)
+	other.schema_id = "deadbeef"
+	var nan := _bc_episode(schema, 23, "map_a", 5)
+	nan.ticks[3] = NAN
+	var again := _bc_episode(schema, 3, "map_a", 5)
+	_check(ex.add(lone) and not ex.add(unverified) and not ex.add(other) and not ex.add(nan) and not ex.add(again) and ex.rejected == 4, "unverified, another schema, a NaN and a repeated id are refused and counted", str(ex.rejected))
+
+	var dir := root.path_join("a")
+	var wrote: DotResult = ex.write(dir)
+	_check(wrote.ok, "written", wrote.error.message if not wrote.ok else "")
+	var loaded: DotResult = DotBotDemoExport.load_manifest(dir)
+	_check(loaded.ok, "the manifest loads back", loaded.error.message if not loaded.ok else "")
+	if not loaded.ok:
+		_done()
+		return
+	var m: Dictionary = loaded.value
+	_check(m["version"] == 1 and m["schema_id"] == schema.schema_id() and m["frame_size"] == 5 and m["observation_size"] == 3 and m["action_size"] == 2, "versioned, with the schema id and sizes")
+	_check((m["observation"] as Array)[0]["scale"] == 10.0 and (m["action"] as Array)[1]["discrete"] == true, "fields keep their scale and discreteness")
+
+	var split_of := {}
+	var rows_of := {}
+	var read_ok := true
+	var worst := 0
+	for i in (m["shards"] as Array).size():
+		var shard: Dictionary = m["shards"][i]
+		var floats: DotResult = DotBotDemoExport.read_shard(dir, m, i)
+		if not floats.ok:
+			read_ok = false
+			continue
+		var data: PackedFloat32Array = floats.value
+		worst = maxi(worst, shard["rows"])
+		var at := 0
+		for pair: Array in shard["episodes"]:
+			split_of[pair[0]] = shard["split"] + "@" + shard["map_id"]
+			var want: PackedFloat32Array = (originals[pair[0]] as DotBotDemoEpisode).ticks if originals.has(pair[0]) else lone.ticks
+			var got := data.slice(at * 5, (at + pair[1]) * 5)
+			rows_of[pair[0]] = got == want
+			at += pair[1]
+	_check(read_ok and rows_of.size() == 11, "every shard reads back, eleven episodes in them", str(rows_of.size()))
+	_check(not rows_of.values().has(false), "each episode's rows read back identical, observation then action")
+	_check(worst <= 30, "a shard holds at most max_shard_rows", str(worst))
+	var held_a := 0
+	for id: int in split_of:
+		held_a += 1 if split_of[id] == "held_out@map_a" else 0
+	_check(held_a == 2 and split_of[20] == "train@map_b", "two of ten held out on map_a, a lone episode stays in training", str(held_a))
+	_check((m["held_out"] as Array).size() == 2 and (m["held_out"][0]["start"] as Dictionary).has("x") and m["totals"]["held_out"] > 0, "the held-out list carries each start for the evaluation gate")
+	var ids_seen := {}
+	for pair in (m["held_out"] as Array):
+		ids_seen[int(pair["id"])] = true
+	var leak := false
+	for s: Dictionary in m["shards"]:
+		if s["split"] == "train":
+			for pair: Array in s["episodes"]:
+				leak = leak or ids_seen.has(pair[0])
+	_check(not leak, "no held-out episode is also in a training shard")
+
+	var second := DotBotDemoExport.new(schema)
+	second.max_shard_rows = 30
+	for id: int in originals:
+		var _a := second.add(originals[id])
+	var _b := second.add(lone)
+	var _c := second.write(root.path_join("b"))
+	var again_m: Dictionary = DotBotDemoExport.load_manifest(root.path_join("b")).value
+	_check(JSON.stringify(again_m["shards"]) == JSON.stringify(m["shards"]) and JSON.stringify(again_m["held_out"]) == JSON.stringify(m["held_out"]), "the same episodes give the same split and bytes")
+	var reseeded := DotBotDemoExport.new(schema)
+	reseeded.split_seed = "other"
+	for id: int in originals:
+		var _d := reseeded.add(originals[id])
+	var _e := reseeded.write(root.path_join("c"))
+	var seeded_m: Dictionary = DotBotDemoExport.load_manifest(root.path_join("c")).value
+	_check(JSON.stringify(seeded_m["held_out"]) != JSON.stringify(m["held_out"]), "another seed holds out other episodes")
+
+	_check(ex.write(dir).code() == DotError.CODE_CONFLICT, "an existing export is not overwritten by default")
+	var fewer := DotBotDemoExport.new(schema)
+	fewer.max_shard_rows = 1000
+	var _f := fewer.add(originals[1])
+	var _g := fewer.add(originals[2])
+	_check(fewer.write(dir, true).ok and DirAccess.get_files_at(dir).size() == 1 + 2 and not FileAccess.file_exists(dir.path_join("shard_2.f32")), "overwrite removes the old shards")
+
+	# Untrusted input: each edit of a good manifest must be refused with a reason.
+	var t := root.path_join("t")
+	var clean := DotBotDemoExport.new(schema)
+	clean.max_shard_rows = 30
+	for id: int in originals:
+		var _h := clean.add(originals[id])
+	var _i := clean.write(root.path_join("good"))
+	var good := root.path_join("good")
+	var cases := {
+		"a newer version": [func(x: Dictionary) -> void: x["version"] = 2, DotError.CODE_VERSION],
+		"another format": [func(x: Dictionary) -> void: x["format"] = "pickle", DotError.CODE_INVALID],
+		"a path in a shard name": [func(x: Dictionary) -> void: x["shards"][0]["file"] = "../manifest.json", DotError.CODE_INVALID],
+		"an absolute shard name": [func(x: Dictionary) -> void: x["shards"][0]["file"] = "/etc/passwd", DotError.CODE_INVALID],
+		"a shard listed twice": [func(x: Dictionary) -> void: x["shards"][1]["file"] = x["shards"][0]["file"], DotError.CODE_INVALID],
+		"a huge row count": [func(x: Dictionary) -> void: x["shards"][0]["rows"] = 1e12, DotError.CODE_INVALID],
+		"a fractional row count": [func(x: Dictionary) -> void: x["shards"][0]["rows"] = 2.5, DotError.CODE_INVALID],
+		"rows that do not add up": [func(x: Dictionary) -> void: x["shards"][0]["rows"] += 1, DotError.CODE_INVALID],
+		"a bad split name": [func(x: Dictionary) -> void: x["shards"][0]["split"] = "test", DotError.CODE_INVALID],
+		"a short hash": [func(x: Dictionary) -> void: x["shards"][0]["sha256"] = "abc", DotError.CODE_INVALID],
+		"a frame size that is not the fields": [func(x: Dictionary) -> void: x["frame_size"] = 6, DotError.CODE_INVALID],
+		"a zero scale": [func(x: Dictionary) -> void: x["observation"][0]["scale"] = 0, DotError.CODE_INVALID],
+		"a field with a huge size": [func(x: Dictionary) -> void: x["observation"][0]["size"] = 1e9, DotError.CODE_INVALID],
+		"a repeated field name": [func(x: Dictionary) -> void: x["action"][0]["name"] = "pos", DotError.CODE_INVALID],
+		"shards that are not a list": [func(x: Dictionary) -> void: x["shards"] = "all", DotError.CODE_INVALID],
+		"a held-out start that is not an object": [func(x: Dictionary) -> void: x["held_out"][0]["start"] = 5, DotError.CODE_INVALID],
+	}
+	for what: String in cases:
+		await _bc_tamper(good, t, cases[what][0])
+		var res: DotResult = DotBotDemoExport.load_manifest(t)
+		_check(not res.ok and res.code() == cases[what][1], "refused: %s" % what, res.code() if not res.ok else "loaded")
+	var big := FileAccess.open(t.path_join("manifest.json"), FileAccess.WRITE)
+	big.store_buffer(("{\"pad\":\"" + "x".repeat(DotBotDemoExport.MAX_MANIFEST_BYTES) + "\"}").to_utf8_buffer())
+	big.close()
+	_check(not DotBotDemoExport.load_manifest(t).ok, "refused: a manifest past the size limit")
+	var junk := FileAccess.open(t.path_join("manifest.json"), FileAccess.WRITE)
+	junk.store_string("{not json")
+	junk.close()
+	_check(DotBotDemoExport.load_manifest(t).code() == DotError.CODE_PARSE, "refused: malformed JSON is a parse error")
+	_check(DotBotDemoExport.load_manifest(root.path_join("nowhere")).code() == DotError.CODE_IO, "refused: a directory with no manifest")
+
+	var gm: Dictionary = DotBotDemoExport.load_manifest(good).value
+	await _bc_tamper(good, t, func(_x: Dictionary) -> void: pass)
+	var shard0: Dictionary = gm["shards"][0]
+	var f0 := FileAccess.open(t.path_join(shard0["file"]), FileAccess.READ_WRITE)
+	f0.seek(0)
+	f0.store_32(0x7f800001)
+	f0.close()
+	_check(DotBotDemoExport.read_shard(t, gm, 0).code() == DotError.CODE_INTEGRITY, "refused: a shard whose bytes changed")
+	var nan_hash := FileAccess.get_sha256(t.path_join(shard0["file"]))
+	var forged: Dictionary = gm.duplicate(true)
+	forged["shards"][0]["sha256"] = nan_hash
+	var nan_read: DotResult = DotBotDemoExport.read_shard(t, forged, 0)
+	_check(not nan_read.ok and "finite" in nan_read.error.message, "refused: a NaN in a shard whose hash was forged to match", nan_read.error.message if not nan_read.ok else "")
+	var cut := FileAccess.open(t.path_join(shard0["file"]), FileAccess.WRITE)
+	cut.store_32(1)
+	cut.close()
+	_check(DotBotDemoExport.read_shard(t, gm, 0).code() == DotError.CODE_INTEGRITY, "refused: a truncated shard")
+	var trav: Dictionary = gm.duplicate(true)
+	trav["shards"][0]["file"] = "../x.f32"
+	_check(DotBotDemoExport.read_shard(good, trav, 0).code() == DotError.CODE_INVALID and not DotBotDemoExport.read_shard(good, gm, 99).ok, "refused: a hand-built manifest naming a path, or an index past the end")
+
+	var store := DotBotDemoStoreMemory.new()
+	var batch := [_bc_episode(schema, 1, "map_c", 4), _bc_episode(schema, 2, "map_c", 4), _bc_episode(schema, 3, "map_c", 4)]
+	var _ap := await store.append(batch)
+	var from_store := DotBotDemoExport.new(schema)
+	var got: DotResult = await from_store.collect(store, "map_c", "v1", ["edge_0", "edge_1", "edge_2"])
+	_check(got.ok and got.value == 3, "collected from a store", str(got.value))
+	var described := DotBotDemoExport.schema_from_dictionary({"kind": "ride", "version": 2, "observation": [["pos", 2, 10], ["speed", 1, 5]], "action": [["thrust", 1, 1], ["jump", 1, 1, true]]})
+	_check(described.ok and (described.value as DotBotDemoSchema).schema_id() == schema.schema_id(), "a schema described in JSON has the id of the one built in code")
+	var _rm := await DotPaths.remove_tree(root)
+	_done()

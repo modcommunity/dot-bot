@@ -76,6 +76,7 @@ const SPEC := [
 	["map_knowledge", 0.0, 1.0, 0.1, 0.4, 0.7, 1.0, "Chance a roaming bot heads where it last knew of an enemy instead of anywhere."],
 	["pickup_weapons", 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, "1 lets a quiet bot walk to a better weapon lying about and take it with the use key; 0 never."],
 	["pickup_range", 1.0, 100.0, 6.0, 9.0, 12.0, 16.0, "Farthest a bot notices a weapon lying about, metres (it must also see it)."],
+	["policy", 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, "Share of bots driven by the cloned policy (0 none, 1 all). Off in every preset; it also needs a net and a passing evaluation gate for the map."],
 	# Humanisation: every one is 0 for the old, exact behaviour.
 	["react_jitter", 0.0, 2.0, 0.5, 0.3, 0.3, 0.25, "How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way)."],
 	["overshoot", 0.0, 1.0, 0.6, 0.4, 0.4, 0.3, "How far a fast turn onto a target swings past it before coming back (0 is none)."],
@@ -140,6 +141,7 @@ const COL_HELP := 7
 @export var map_knowledge: float = 0.4
 @export var pickup_weapons: float = 1.0
 @export var pickup_range: float = 9.0
+@export var policy: float = 0.0
 
 @export_group("Humanisation")
 @export var react_jitter: float = 0.3
