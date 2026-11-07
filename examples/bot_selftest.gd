@@ -3,14 +3,14 @@ extends "res://examples/selftest/policy_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 558
+const CHECKS := 564
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 50
+const SECTIONS := 51
 
 
 func _ready() -> void:
@@ -49,6 +49,7 @@ func _run() -> void:
 	await _test_stitches()
 	await _test_unlock_export()
 	await _test_ladders()
+	await _test_door_then_ladder()
 	await _test_kill_avoidance()
 	_test_harvest_verify()
 	await _test_harvest_store()
@@ -119,6 +120,7 @@ class FakeMover extends RefCounted:
 
 class FakeEntity extends RefCounted:
 	var mover: FakeMover = FakeMover.new()
+	var node: Node3D = null
 	var index := 0
 	var hit_half := Vector3.ZERO
 	var hit_frame := Transform3D.IDENTITY
@@ -247,8 +249,10 @@ func _test_links() -> void:
 
 ## One roaming bot on a toy body for [param seconds]: ground below x 0, a platform 4 m up from x 0, a ladder on its face.
 ## The body climbs as dot-player-controller's ladder mode does: forward into the ladder's face is up.
-func _ladder_run(world: DotBotWorld, ladder: AABB, seconds: float) -> Dictionary:
-	var me := DotBotContact.make(1, Vector3(-6.0, 0.0, 0.0))
+## With [param links] and [param door_x], a touch door stands across the corridor at that x and holds the body back until [method DotBotLinks.doors_touched] names it.
+func _ladder_run(world: DotBotWorld, ladder: AABB, seconds: float, links: DotBotLinks = null, door_x: float = 0.0, start_x: float = -6.0) -> Dictionary:
+	var me := DotBotContact.make(1, Vector3(start_x, 0.0, 0.0))
+	var door_open := links == null
 	me.view_yaw = 90.0
 	me.view_pitch = 0.0
 	world.contacts_fn = func() -> Array: return [me]
@@ -256,6 +260,7 @@ func _ladder_run(world: DotBotWorld, ladder: AABB, seconds: float) -> Dictionary
 	var t := 0.0
 	var top := 0.0
 	var climbed := false
+	var opened_at := -1.0
 	while t < seconds:
 		var intent := brain.think(me, world, t)
 		me.view_yaw = intent.yaw
@@ -265,19 +270,24 @@ func _ladder_run(world: DotBotWorld, ladder: AABB, seconds: float) -> Dictionary
 		var right := Vector3(cos(y), 0.0, -sin(y))
 		var wish := (right * intent.move.x + forward * intent.move.y) * 3.81
 		var hull := AABB(me.position - Vector3(0.4, 0.0, 0.4), Vector3(0.8, 1.8, 0.8))
+		if links != null and not door_open and not links.doors_touched(me.position, 0.35, 1.8).is_empty():
+			door_open = true
+			opened_at = t
 		var away := Vector3(-1.0, 0.0, 0.0)
 		if hull.intersects(ladder) and -wish.dot(away) > 0.1 and me.position.y < 4.0:
 			me.position.y += -wish.dot(away) * TICK
 			climbed = true
 		else:
 			me.position += wish * TICK
+			if not door_open:
+				me.position.x = minf(me.position.x, door_x - 0.45)
 			if me.position.y < 3.9:
 				me.position.x = minf(me.position.x, -0.55)
 			var floor_y := 4.0 if me.position.y >= 3.9 and me.position.x > -0.6 else 0.0
 			me.position.y = maxf(floor_y, me.position.y - 10.0 * TICK)
 		top = maxf(top, me.position.y)
 		t += TICK
-	return {"position": me.position, "top": top, "climbed": climbed}
+	return {"position": me.position, "top": top, "climbed": climbed, "door_open": door_open, "opened_at": opened_at}
 
 
 ## A bot reaches a platform only a ladder leads to: the nav links it, the brain walks to its foot, climbs and steps off.
@@ -320,6 +330,73 @@ func _test_ladders() -> void:
 	_check(DotBotLinks.link_ladders(nav2, []) == null and DotBotLinks.link_ladders(nav2, [AABB(Vector3(-0.2, 0.0, 3.0), Vector3(0.2, 0.5, 1.0))]) == null, "no ladders, or none tall enough, give null")
 	nav2.clear()
 	made[0].queue_free()
+	_done()
+
+
+class FakeSlide extends FakeMover:
+	var start_open := false
+	var solid := true
+	var kind := "slide"
+
+	func is_animatable() -> bool:
+		return true
+
+	func transform_at(_a: float, _b: float) -> Transform3D:
+		return Transform3D(Basis.IDENTITY, Vector3(0.0, 3.0, 0.0))
+
+
+## A touch door shuts the corridor to the ladder: the bake sees it posed open, the bot walks into it, it opens, then the ladder is climbed.
+func _test_door_then_ladder() -> void:
+	_section("door then ladder: a bot opens a touch door in its way, then climbs")
+	var made := await _floors([Vector3(-5.0, 0.0, 0.0), Vector3(5.0, 4.0, 0.0)], Vector3(10.0, 0.0, 10.0))
+	var root: Node3D = made[0]
+	var door_node := StaticBody3D.new()
+	var door_shape := CollisionShape3D.new()
+	var door_box := BoxShape3D.new()
+	door_box.size = Vector3(0.2, 2.5, 10.0)
+	door_shape.shape = door_box
+	door_node.add_child(door_shape)
+	door_node.position = Vector3(-6.5, 1.25, 0.0)
+	root.add_child(door_node)
+	await get_tree().physics_frame
+	var ladder := AABB(Vector3(-0.2, 0.0, -0.5), Vector3(0.2, 4.0, 1.0))
+	var fake := FakeWorld.new()
+	fake.ladders.append(ladder)
+	var door := FakeEntity.new()
+	door.index = 7
+	door.mover = FakeSlide.new()
+	door.node = door_node
+	door.hit_half = Vector3(0.1, 1.25, 5.0)
+	door.hit_frame = Transform3D(Basis.IDENTITY, Vector3(-6.5, 1.25, 0.0))
+	fake.io.entities.append(door)
+	var links := DotBotLinks.read(fake)
+	_check(links.doors.size() == 1 and links.swings.size() == 1 and links.ladders.size() == 1, "read: the door is a touch door and a swing, the ladder is kept", str(links.describe()))
+	var params := {"radius": 0.35, "height": 1.0, "climb": 0.4}
+	var shut := DotBotNav.new()
+	var shut_baked := shut.bake(root, params, 0, [made[1], door_node])
+	var wall := Vector3(-3.0, 0.0, 0.0)
+	var shut_walk := shut.path(Vector3(-9.0, 0.0, 0.0), wall) if shut_baked.ok else PackedVector3Array()
+	shut.clear()
+	_check(shut_baked.ok and (shut_walk.is_empty() or shut_walk[shut_walk.size() - 1].distance_to(wall) > 1.0), "baked shut, the door walls the corridor off")
+	var undo := links.pose_open()
+	var nav := DotBotNav.new()
+	var baked := nav.bake(root, params, 0, [made[1], door_node])
+	links.restore(undo)
+	_check(baked.ok and is_equal_approx(door_node.position.y, 1.25), "baked with the door posed open, put back after")
+	links.join(nav)
+	var goal := Vector3(5.0, 4.0, -3.0)
+	var world := DotBotWorld.new()
+	world.waypoints_fn = func() -> PackedVector3Array: return PackedVector3Array([goal])
+	world.route_detail_fn = func(from: Vector3, to: Vector3) -> Dictionary: return nav.route(from, to)
+	world.ladder_fn = links.ladder_of
+	var stuck := _ladder_run(world, ladder, 40.0, DotBotLinks.new(), -6.5, -9.0)
+	_check(not stuck["door_open"] and not stuck["climbed"] and (stuck["position"] as Vector3).x < -6.5, "control: nothing opens the door, the bot stays behind it", str(stuck))
+	var run := _ladder_run(world, ladder, 40.0, links, -6.5, -9.0)
+	var at: Vector3 = run["position"]
+	_check(run["door_open"] and (run["opened_at"] as float) > 0.0, "the bot walked into the door and opened it", str(run))
+	_check(run["climbed"] and at.y > 3.9 and at.x > 0.3, "and then climbed the ladder to the platform", str(run))
+	nav.clear()
+	root.queue_free()
 	_done()
 
 
