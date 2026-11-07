@@ -2,7 +2,7 @@
 
 # Demonstration recorder
 
-Stage 1's core is built (`dot-bot-record`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores are built (`dot_bot_demo_store_json.gd`, `dot_bot_demo_store_sql.gd`, `DotBotDemoStore.from_config`); the ride harvest (`DotBotRideHarvest`, `DotBotRideBook`, `DotBotRideConfig` in `runtime/surf/`) is built as the replay of the recorded commands described below; pilot quantisation and statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
+Stage 1's core is built (`dot-bot-record`: schema, episode, recorder, config, store base, memory store); the JSON and SQL stores are built (`dot_bot_demo_store_json.gd`, `dot_bot_demo_store_sql.gd`, `DotBotDemoStore.from_config`); the ride harvest (`DotBotRideHarvest`, `DotBotRideBook`, `DotBotRideConfig` in `runtime/surf/`) is built, with the pilot replay (quantised actions, tracking, veto) below; statistics are not. A dedicated server records what real players do, as observations and actions in a schema each game declares, and bots learn from it: first as ride routes (surf rides, verified on the motor), then as plain statistics (where people stand, how fast they react), and last as a small policy network cloned from the recordings. Everything game-specific is declared by the host; dot-bot keeps naming no other addon.
 
 ## Why
 
@@ -102,7 +102,30 @@ Verification costs a ride's length in simulated ticks a start, so it never runs 
 
 ### As built
 
-`DotBotRideHarvest` replays the recorded commands themselves (open loop, each held for the gap the rate left) on the host's simulator through three host methods (`replay_start`, `replay_command`, `landing`, optional `perturb`), as a `DotBotRideHarvestJob` inside `budget_msec` a step. Quantising to pilot actions with tracking and veto is not built. A full edge past `cap` replaces its worst-scored ride with a better newcomer through `DotBotDemoStore.remove`. `DotBotRideBook` keeps verified recordings and searched seeds per edge for one map id and version (a new version empties it), and `DotBotSurfRide.pick` and `begin_picked` choose and play one. All numbers are `DotBotRideConfig`.
+`DotBotRideHarvest` replays the recorded commands themselves (open loop, each held for the gap the rate left) on the host's simulator through three host methods (`replay_start`, `replay_command`, `landing`, optional `perturb`), as a `DotBotRideHarvestJob` inside `budget_msec` a step. Quantising to pilot actions with tracking and veto is built (below). A full edge past `cap` replaces its worst-scored ride with a better newcomer through `DotBotDemoStore.remove`. `DotBotRideBook` keeps verified recordings and searched seeds per edge for one map id and version (a new version empties it), and `DotBotSurfRide.pick` and `begin_picked` choose and play one. All numbers are `DotBotRideConfig`.
+
+### Piloted replay (built)
+
+When the host also has `pilot_setup(pilot, episode)` (and `DotBotRideConfig.piloted` is on, the default), `DotBotRideHarvest.replay` is the three steps above:
+
+- `DotBotRideQuantiser.entries` turns each sample into a cache row. The `ride` schema's fields are found by name (`position`, `velocity`, `yaw`, `move`, `jump`, in any order, other fields allowed). The command becomes the nearest `DotBotSurfPilot.ACTIONS` entry for that sample's velocity: no stick is 0 (coast), a held jump is 8, otherwise the stick's angle off the view plus the view yaw is compared with each action's wish yaw (heading from the recorded velocity, `reference_yaw` for the anchored two and for a velocity too small to have a heading). A gap of `hold` ticks becomes `hold` rows, position and velocity interpolated and the action held, because the pilot's tracking looks `track_every` rows ahead and means ticks. Without that a 16 Hz recording tracked 0.5 s ahead and the toy ride overshot the platform.
+- The pilot has this ride as its only cache, `pilot_tracking` on, veto horizon `pilot_horizon` (the simulator has to return `DotBotSurfCourse` events, as the planner's already does). `pilot_setup` is where the host sets what only it knows: `pilot.reference_yaw` and `pilot.score` from the edge's course.
+- `host.landing` judges every tick as before, and the same perturbed starts score it.
+
+On the suite's toy, from starts perturbed by up to 2.2 m/s the pilot lands the recorded line 100% and the raw commands 62%. A host without `pilot_setup`, or `piloted = false`, still replays the commands open loop, so game-arena's e8ce78c keeps working unchanged. `DotBotRideBook.load_edge(..., reference_yaw)` then also stores the quantised cache with the recording, and `DotBotSurfRide.begin_picked` rides it on a pilot of its own (tracking when a simulator is given) instead of playing the raw rows back.
+
+Limit: a job step checks its 2 ms budget between replays, and a piloted replay with the veto costs more than an open one (not measured on a real map), so on a server give the job `budget_msec` accordingly or run it between rounds.
+
+### Host wiring for game-arena (design note, not built: the repo was held)
+
+Four additions to `arena_surf_rides.gd`, all optional, none changing the existing `replay_*` methods:
+
+1. `pilot_setup(pilot, ep)`: `var c := course_for_key(ep.key)`; `pilot.reference_yaw` as the bot pilot gets it for that edge (not checked against arena_surf.gd; `c.start_yaw` is the likely source); `pilot.score = c.score`. Whatever `ArenaSurf` gives a bot's pilot for this edge (the same course object, `sim` is already the edge's simulator with its `oracle` returning course events) is what the harvest must see, so reuse that builder rather than a second copy.
+2. `_sim` must be the edge's `DotFpsSimulator` with the course oracle set before the job starts (the existing `_replay_course.current` trick does this for `landing`; the veto needs the oracle too, because it reads `step`'s event).
+3. `harvest_edge` calls `book.load_edge(store, KIND, key, schema, tick_rate, <the same reference yaw>)` so the bot gets the cache; the `decode` callable stays as the fallback for books loaded without a yaw.
+4. `tools/surf_rides.tscn --harvest` prints `harvest.describe()["piloted_replays"]` and writes the merged cache from `book.ranked(key)` entries' `data["cache"]` (rows already in metres; `DotBotSurfPilot.entries_to_rows`), which also closes the "writes no merged cache file" gap in arena-ride-recording.
+
+Cost to watch in headless_imported: the veto makes a piloted replay roughly as dear as a bot riding the edge, times `1 + starts`.
 
 ### Ranking and choosing
 

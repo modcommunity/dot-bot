@@ -96,6 +96,19 @@ func begin_picked(entry: Dictionary, cache: DotBotSurfPilot, p_course: DotBotSur
 		p_decode: Callable = Callable(), tick_rate: float = 64.0, seconds: float = 20.0) -> DotBotSurfRide:
 	picked = entry
 	var data: Variant = entry.get("data")
+	if entry.get("source", "") == DotBotRideBook.RECORDED and data is Dictionary and (data as Dictionary).has("cache"):
+		# Verified as a pilot cache, so it rides as one: this ride alone, tracking.
+		var rows: PackedFloat32Array = data["cache"]
+		var own := DotBotSurfPilot.new()
+		own.load_entries(rows, PackedInt32Array([rows.size() / DotBotSurfPilot.STRIDE]), float(data.get("reference_yaw", 0.0)))
+		own.tracking = sim != null
+		own.horizon = cache.horizon
+		own.check_every = cache.check_every
+		own.rolling = cache.rolling
+		begin(own, p_course, sim, now_tick, tick_rate, seconds)
+		pilot.tracking = sim != null
+		recorded = {}
+		return self
 	if entry.get("source", "") == DotBotRideBook.RECORDED and data is Dictionary and p_decode.is_valid():
 		begin(cache, p_course, sim, now_tick, tick_rate, seconds)
 		recorded = data
