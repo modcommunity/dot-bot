@@ -57,6 +57,7 @@ func load_edge(store: Variant, kind: String, key: String, schema: Variant, tick_
 		if not is_nan(reference_yaw):
 			data["cache"] = DotBotRideQuantiser.entries(ep, schema, reference_yaw, hold)
 			data["reference_yaw"] = reference_yaw
+			data["tracking"] = config.pilot_tracking
 		kept.append({"id": ep.id, "source": RECORDED, "score": ep.score, "data": data})
 		n += 1
 	return DotResult.success(n)

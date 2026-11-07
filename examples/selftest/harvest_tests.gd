@@ -478,7 +478,7 @@ func _test_ride_book_cache() -> void:
 	var _s := course.settle()
 	var sim := PilotToySim.new()
 	var ride := DotBotSurfRide.new().begin_picked(entry, DotBotSurfPilot.new(), course, sim, 0)
-	_check(ride.recorded.is_empty() and ride.pilot.tracking and ride.pilot.size() == (ep.sample_count() - 1) * 4 + 1, "begin_picked rides it on a pilot of its own, tracking, a row a tick")
+	_check(ride.recorded.is_empty() and not ride.pilot.tracking and ride.pilot.size() == (ep.sample_count() - 1) * 4 + 1, "begin_picked rides it on a pilot of its own, with the default tracking (off), a row a tick")
 	var state := PilotToyState.new()
 	var intent := DotBotIntent.new()
 	var status := DotBotSurfRide.RIDING
@@ -490,4 +490,101 @@ func _test_ride_book_cache() -> void:
 			status = DotBotSurfRide.LANDED if state.position.x >= 10.0 and state.position.x <= 13.0 else DotBotSurfRide.FELL
 			break
 	_check(status == DotBotSurfRide.LANDED, "a bot riding the picked recording lands on the far platform", str(status))
+	_done()
+
+
+class CountingHost:
+	extends PilotToyHost
+	var landings := 0
+
+	func landing(state: Variant, event: int, ep: DotBotDemoEpisode) -> int:
+		landings += 1
+		return super.landing(state, event, ep)
+
+
+## Rides the book's pick of [param ep] on the toy; the ride's status.
+func _ride_picked(ep: DotBotDemoEpisode, tracking: bool) -> Array:
+	var store := DotBotDemoStoreMemory.new()
+	ep.verified = true
+	ep.score = 0.9
+	var _a := await store.append([ep])
+	var cfg := DotBotRideConfig.new()
+	cfg.pilot_tracking = tracking
+	var book := _book(cfg)
+	var _n: DotResult = await book.load_edge(store, "ride", "1>2", _pilot_schema(), 64.0, -90.0)
+	var course := DotBotSurfCourse.new()
+	course.goals.append(AABB(Vector3(10.0, -1.0, -5.0), Vector3(3.0, 2.0, 10.0)))
+	course.floor_y = -5.0
+	var _s := course.settle()
+	var sim := PilotToySim.new()
+	var ride := DotBotSurfRide.new().begin_picked(book.ranked("1>2")[0], DotBotSurfPilot.new(), course, sim, 0)
+	var state := PilotToyState.new()
+	var intent := DotBotIntent.new()
+	var status := DotBotSurfRide.RIDING
+	for t in 400:
+		status = ride.steer(state, intent, t)
+		if status != DotBotSurfRide.RIDING:
+			break
+		if sim.step(state, sim.command(intent.yaw, intent.move, intent.jump)) != 0:
+			status = DotBotSurfRide.LANDED if state.position.x >= 10.0 and state.position.x <= 13.0 else DotBotSurfRide.FELL
+			break
+	return [status, ride.pilot.tracking]
+
+
+func _test_ride_tracking_agrees() -> void:
+	_section("ride harvest: a ride is verified and ridden with the same tracking")
+	_check(not DotBotRideConfig.new().pilot_tracking, "the default is no tracking")
+	for tracking in [false, true]:
+		var cfg := DotBotRideConfig.new()
+		cfg.pilot_tracking = tracking
+		var verdict: Dictionary = _pilot_harvest(PilotToyHost.new(), cfg).verify([_pilot_episode(8)])[0]
+		var ridden: Array = await _ride_picked(_pilot_episode(8), tracking)
+		_check(ridden[1] == tracking, "tracking = %s: the bot rides with it" % tracking)
+		_check(verdict["ok"] == (ridden[0] == DotBotSurfRide.LANDED), "tracking = %s: verified %s, ridden %s" % [tracking, verdict["ok"], ridden[0]])
+		_check(verdict["ok"], "tracking = %s: the ride lands" % tracking)
+	_done()
+
+
+func _job_ticks(host: CountingHost, cfg: DotBotRideConfig, eps: Array) -> Dictionary:
+	var h := _pilot_harvest(host, cfg)
+	var job := h.make_job(eps)
+	var ticks := 0
+	var worst := 0
+	while true:
+		var before := host.landings
+		var more := job.step()
+		worst = maxi(worst, host.landings - before)
+		ticks += 1
+		if not more or ticks > 100000:
+			break
+	return {"verdicts": job.verdicts, "ticks": ticks, "worst": worst, "steps": host.landings}
+
+
+func _test_harvest_sliced() -> void:
+	_section("ride harvest: a piloted replay is sliced across job ticks, the same verdicts")
+	var eps := [_pilot_episode(8), _pilot_episode(0), _pilot_episode(32), _pilot_episode(8, "1>2")]
+	for i in eps.size():
+		eps[i].id = i + 1
+	var whole := DotBotRideConfig.new()
+	whole.budget_msec = 100000.0
+	var sliced := DotBotRideConfig.new()
+	sliced.slice_steps = 5
+	sliced.budget_msec = 100000.0
+	var a := _job_ticks(CountingHost.new(), whole, eps)
+	var b := _job_ticks(CountingHost.new(), sliced, eps)
+	var same: bool = a["verdicts"].size() == b["verdicts"].size()
+	for i in mini(a["verdicts"].size(), b["verdicts"].size()):
+		var x: Dictionary = a["verdicts"][i]
+		var y: Dictionary = b["verdicts"][i]
+		same = same and x["ok"] == y["ok"] and is_equal_approx(float(x["score"]), float(y["score"])) and x["landed"] == y["landed"] and x["starts"] == y["starts"]
+	_check(a["verdicts"].size() == eps.size() and same, "sliced verdicts equal the unsliced ones", "%s against %s" % [a["verdicts"].size(), b["verdicts"].size()])
+	_check(a["steps"] == b["steps"], "and take the same simulator steps", "%d against %d" % [a["steps"], b["steps"]])
+	_check(b["worst"] <= 5 and b["ticks"] > a["ticks"], "no job tick runs more than slice_steps steps", "max %d steps a tick over %d ticks, against %d in %d" % [b["worst"], b["ticks"], a["worst"], a["ticks"]])
+	print("       max steps in one tick: unsliced %d, sliced %d" % [a["worst"], b["worst"]])
+	var h := _pilot_harvest(PilotToyHost.new())
+	var run := h.begin_replay(eps[0], PilotToyState.new())
+	var n := 0
+	while run.advance(0, 3) == DotBotRideHarvest.RUNNING:
+		n += 1
+	_check(run.verdict == _pilot_harvest(PilotToyHost.new()).replay(eps[0], PilotToyState.new()) and n > 0, "a Run advanced three steps at a time ends on the verdict replay gives")
 	_done()
