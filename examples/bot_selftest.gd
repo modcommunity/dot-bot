@@ -1,16 +1,16 @@
-extends "res://examples/selftest/config_tests.gd"
+extends "res://examples/selftest/mlp_tests.gd"
 
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 453
+const CHECKS := 477
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 41
+const SECTIONS := 42
 
 
 func _ready() -> void:
@@ -63,6 +63,7 @@ func _run() -> void:
 	await _test_heatmap()
 	await _test_aim_stats()
 	await _test_bc_export()
+	_test_mlp()
 
 	print("")
 	print("%d passed, %d failed" % [_passed, _failed])

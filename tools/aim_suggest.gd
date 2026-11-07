@@ -13,7 +13,7 @@ func _init() -> void:
 	var store := DotBotDemoStoreJson.new(args[0])
 	var counts: DotResult = store.counts(args[1], args[2], DotBotAimStats.KIND)
 	if not counts.ok:
-		print(counts.message)
+		print(counts.error.message)
 		quit(1)
 		return
 	var stats := DotBotAimStats.new()
@@ -21,7 +21,7 @@ func _init() -> void:
 		stats.min_count = int(args[3])
 	var folded: DotResult = await stats.fold_store(store, args[1], args[2], (counts.value as Dictionary).keys())
 	if not folded.ok:
-		print(folded.message)
+		print(folded.error.message)
 		quit(1)
 		return
 	for line in stats.describe_lines() + stats.suggest_lines():
