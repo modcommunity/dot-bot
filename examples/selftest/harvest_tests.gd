@@ -288,3 +288,56 @@ func _test_ride_pick() -> void:
 	state.position.x = 10.5
 	_check(ride.steer(state, intent, 7) == DotBotSurfRide.LANDED and ride.describe()["source"] == "recorded", "and it ends in the goal")
 	_done()
+
+
+func _place_episode(label: String, day: String, at: Vector3, fight: float = 0.0, ticks: int = 80) -> DotBotDemoEpisode:
+	var e := _demo_episode("hm_toy", "v1", "place", label)
+	e.day = day
+	e.rate = 4.0
+	e.frame_size = 4
+	var rows := PackedFloat32Array()
+	for _i in ticks:
+		rows.append_array(PackedFloat32Array([at.x, at.y, at.z, fight]))
+	e.ticks = rows
+	return e
+
+
+func _test_heatmap() -> void:
+	_section("demo heatmap: 1 Hz on a 2 m grid, a minimum count, decay, weighted waypoints")
+	var map := DotBotDemoHeatmap.new()
+	map.fight_index = 3
+	var a := Vector3(3.0, 0.0, 3.0)
+	var b := Vector3(21.0, 0.0, 21.0)
+	var c := Vector3(-30.0, 0.0, 5.0)
+	for i in 3:
+		_check(map.fold(_place_episode("red", "2026-11-05", a, 1.0 if i == 0 else 0.0), "2026-11-05"), "an episode folds")
+	var _lone := map.fold(_place_episode("red", "2026-11-05", b), "2026-11-05")
+	_check(map.weight_at(a) == 60.0, "80 ticks at 4 Hz are 20 samples, 60 over three episodes", str(map.weight_at(a)))
+	_check(map.weight_at(Vector3(3.9, 5.0, 2.1)) == 60.0 and map.weight_at(Vector3(4.1, 0.0, 3.0)) == 0.0, "the cell is 2 m square and ignores height")
+	_check(map.weight_at(b) == 0.0, "a cell one player stood in is not used")
+	_check(absf(map.fight_share_at(a) - 1.0 / 3.0) < 0.001 and map.fight_share_at(b) == 0.0, "the share of a cell spent in a fight", str(map.fight_share_at(a)))
+	_check(map.weight_at(a, "red") == 60.0 and map.weight_at(a, "blue") == 0.0, "a label keeps its own cells")
+	var kinds := _place_episode("red", "2026-11-05", a)
+	kinds.kind = "ride"
+	var other := _place_episode("red", "2026-11-05", a)
+	other.map_version = "v2"
+	_check(not map.fold(kinds) and not map.fold(other) and map.episode_count() == 4, "another kind or map version is refused")
+	var pts := PackedVector3Array([a, b, c])
+	var w := map.weighted(pts, "", 4)
+	_check(w.size() == 6 and w.count(a) == 4 and w.count(b) == 1 and w.count(c) == 1, "waypoints repeat by popularity, an unused place once", str(w.size()))
+	var fn := map.waypoints_fn(pts, "red", 4)
+	_check(fn.is_valid() and (fn.call() as PackedVector3Array).size() == 6, "waypoints_fn is a callable for DotBotWorld")
+	var world := DotBotWorld.new()
+	world.waypoints_fn = fn
+	_check(world.waypoints().size() == 6, "and the world reads it")
+	var old := DotBotDemoHeatmap.new()
+	old.min_episodes = 1
+	var _o1 := old.fold(_place_episode("red", "2026-10-22", a), "2026-11-05")
+	var _o2 := old.fold(_place_episode("red", "2026-11-05", a), "2026-11-05")
+	_check(absf(old.weight_at(a) - 60.0 * 1.5 / 3.0) < 0.01, "a sample 14 days old counts half", str(old.weight_at(a)))
+	var store := DotBotDemoStoreMemory.new()
+	var _ap := await store.append([_place_episode("red", "2026-11-05", a), _place_episode("red", "2026-11-05", a), _place_episode("red", "2026-11-05", a)])
+	var fed := DotBotDemoHeatmap.new()
+	var res: DotResult = await fed.fold_store(store, "hm_toy", "v1", ["red"], 100, "2026-11-05")
+	_check(res.ok and res.value == 3 and fed.weight_at(a) == 60.0, "folded from a store", str(res.value))
+	_done()
