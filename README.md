@@ -148,6 +148,7 @@ game-hide-n-seek's `game/hs_bots.gd` is the worked example.
 | `bot_map_knowledge` | 0.1 | 0.4 | 0.7 | 1 | 0 to 1 | Chance a roaming bot heads where it last knew of an enemy instead of anywhere. |
 | `bot_pickup_weapons` | 1 | 1 | 1 | 1 | 0 or 1 | 1 lets a quiet bot walk to a better weapon lying about and take it with the use key; 0 never. |
 | `bot_pickup_range` | 6 | 9 | 12 | 16 | 1 to 100 m | Farthest a bot notices a weapon lying about (it must also see it). |
+| `bot_policy` | 0 | 0 | 0 | 0 | 0 to 1 | Share of bots driven by the cloned policy (`DotBotPolicy`); needs a net and a passing gate report for the map. |
 | `bot_react_jitter` | 0.5 | 0.3 | 0.3 | 0.25 | 0 to 2 | How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way). |
 | `bot_overshoot` | 0.6 | 0.4 | 0.4 | 0.3 | 0 to 1 | How far a fast turn onto a target swings past it before coming back (0 is none). |
 | `bot_track_lag` | 0.12 | 0.05 | 0.04 | 0.03 | 0 to 0.5 | Seconds the bot takes to notice a target changed direction (it aims with the old velocity meanwhile). |

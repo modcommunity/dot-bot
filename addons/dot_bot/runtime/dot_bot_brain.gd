@@ -96,6 +96,8 @@ var _chase_lost: bool = false
 var _grenade_ready: bool = false
 ## Fetching a better weapon from the floor; see [DotBotPickup].
 var pickup := DotBotPickup.new()
+## The cloned policy, or null; it drives this bot only when [method DotBotPolicy.active] says so (`bot_policy` above 0, a passing gate for the map).
+var policy: DotBotPolicy = null
 
 # Sound and pain.
 var _heard_pos: Vector3 = Vector3.INF
@@ -204,6 +206,11 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	out.pitch = aim.pitch
 	tricks.apply(me, world, p, _rng, _scene, _scene_up, aim.yaw, now, dt, out)
 	out.target_id = target_id if _visible else -1
+	if policy != null and _climb == null and _ride_reached < 0 and policy.active(p, id):
+		policy.apply(me, world, p, dt, out)
+		# The view stays the brain's: its aim carries on from where the policy turned it.
+		aim.yaw = out.yaw
+		aim.pitch = out.pitch
 	if _climb != null:
 		_climb_step(me, now, out)
 		_unstick.reset(me.position, now)
