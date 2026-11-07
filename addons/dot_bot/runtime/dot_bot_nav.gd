@@ -549,7 +549,7 @@ func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, l
 				v = candidate[0]
 				w = candidate[1]
 				break
-		if v == Vector3.INF:
+		if v == Vector3.INF or _buried(v) or _buried(w):
 			continue
 		var low := v if v.y <= w.y else w
 		var high := w if v.y <= w.y else v
@@ -598,8 +598,10 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 			var steps := maxi(1, int(along.length() / spacing))
 			for s in steps:
 				var rim := pa + along * ((float(s) + 0.5) / float(steps))
+				if _buried(rim):
+					continue
 				var found := _drop_landing(rim, out, min_drop, max_drop, reaches, island_at(rim) if other_island else -2)
-				if found == Vector3.INF:
+				if found == Vector3.INF or _buried(found):
 					continue
 				var cell := Vector4i(roundi(rim.x / spacing), roundi(rim.y), roundi(found.x / spacing), roundi(found.z / spacing))
 				# per pair of islands: two floors a metre apart under one rim must not shadow each other
@@ -612,6 +614,15 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 				if added >= limit:
 					return added
 	return added
+
+
+## Whether a point a little above [param feet] lies inside a solid body: a scrap of mesh a bake leaves inside a wall's footprint, which no body stands on or reaches.
+func _buried(feet: Vector3) -> bool:
+	if _root == null or not is_instance_valid(_root) or not _root.is_inside_tree():
+		return false
+	var query := PhysicsPointQueryParameters3D.new()
+	query.position = feet + Vector3(0.0, 0.5, 0.0)
+	return not _root.get_world_3d().direct_space_state.intersect_point(query, 1).is_empty()
 
 
 func _clear_fall(rim: Vector3, column: Vector3, landing: Vector3) -> bool:
@@ -641,6 +652,10 @@ func _drop_landing(rim: Vector3, out: Vector3, min_drop: float, max_drop: float,
 				continue
 			var ground: Vector3 = hit["position"]
 			var spot := NavigationServer3D.map_get_closest_point(_map, ground)
+			# the nearest mesh can lie behind a wall the column stopped short of
+			var chest := Vector3(0.0, 0.5, 0.0)
+			if not space.intersect_ray(PhysicsRayQueryParameters3D.create(ground + chest, spot + chest)).is_empty():
+				continue
 			if rim.y - spot.y >= min_drop and rim.y - spot.y <= max_drop and Vector2(spot.x - ground.x, spot.z - ground.z).length() < 0.6 \
 					and absf(spot.y - ground.y) < 0.8 and (not_island == -2 or island_at(spot) != not_island):
 				return spot

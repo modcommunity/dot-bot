@@ -312,6 +312,44 @@ func _test_ride_edges() -> void:
 	_done()
 
 
+## A drop whose column stops just short of a thin wall must not land on the mesh behind it.
+func _test_drop_behind_wall() -> void:
+	_section("drops: a landing behind a wall the column stopped short of is refused")
+	var root := Node3D.new()
+	add_child(root)
+	var still := StaticBody3D.new()
+	root.add_child(still)
+	var baked_floor := CollisionShape3D.new()
+	var floor_box := BoxShape3D.new()
+	floor_box.size = Vector3(8.0, 0.2, 8.0)
+	baked_floor.shape = floor_box
+	baked_floor.position = Vector3(5.3, -0.1, 0.0)
+	still.add_child(baked_floor)
+	# Ground and wall the bake does not see, so the mesh stops at x = 1.3 and the wall stands in front of it.
+	var unbaked := StaticBody3D.new()
+	root.add_child(unbaked)
+	for part: Array in [[Vector3(8.0, 0.2, 8.0), Vector3(-2.7, -0.1, 0.0)], [Vector3(0.25, 3.0, 8.0), Vector3(1.175, 1.5, 0.0)]]:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = part[0]
+		shape.shape = box
+		shape.position = part[1]
+		unbaked.add_child(shape)
+	await get_tree().physics_frame
+	var nav := DotBotNav.new()
+	var baked := nav.bake(root, {"radius": 0.05, "height": 1.0, "climb": 0.4}, 0, [still])
+	var rim := Vector3(0.1, 1.2, 0.0)
+	var near_mesh := nav.closest(Vector3(1.0, 0.0, 0.0))
+	_check(baked.ok and Vector2(near_mesh.x - 1.0, near_mesh.z).length() < 0.6, "the mesh starts within 0.6 m of the column, behind the wall", str(near_mesh))
+	var landing := nav._drop_landing(rim, Vector3.RIGHT, 0.9, 24.0, [0.9])
+	_check(landing == Vector3.INF, "so the drop finds no landing", str(landing))
+	_check(nav._buried(Vector3(1.175, 0.13, 0.0)) and not nav._buried(Vector3(-1.0, 0.0, 0.0)) and not nav._buried(Vector3(3.0, 0.0, 0.0)),
+		"a point inside the wall is buried, one on either floor is not")
+	nav.clear()
+	root.queue_free()
+	_done()
+
+
 func _ride_steer_checks() -> Vector3:
 	# A ride: the pilot's legs into the brain's intent, the view left alone, and the landing told.
 	var course := DotBotSurfCourse.new()
