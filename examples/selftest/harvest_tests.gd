@@ -601,6 +601,7 @@ func _test_bc_export() -> void:
 	var described := DotBotDemoExport.schema_from_dictionary({"kind": "ride", "version": 2, "observation": [["pos", 2, 10], ["speed", 1, 5]], "action": [["thrust", 1, 1], ["jump", 1, 1, true]]})
 	_check(described.ok and (described.value as DotBotDemoSchema).schema_id() == schema.schema_id(), "a schema described in JSON has the id of the one built in code")
 	var _rm := await DotPaths.remove_tree(root)
+	_done()
 
 
 # The piloted replay's toy: a point mass flying at 8 m/s from 6 m up, 20 m/s^2 along the wish; the platform is x from 10 to 13.
