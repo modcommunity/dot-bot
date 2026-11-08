@@ -109,9 +109,10 @@ static func native_available() -> bool:
 
 
 ## The native sight scan over [param all] packed once for this [member contacts_version], or null
-## (no extension, or the game does not bump the version); [method sensed] maps its indices back.
+## (no extension, the game does not bump the version, or a worker thread: brains thinking on threads
+## scan in script, since the scan keeps its last answer); [method sensed] maps its indices back.
 func senses(all: Array) -> Object:
-	if contacts_version < 0 or not native_available():
+	if contacts_version < 0 or not native_available() or OS.get_thread_caller_id() != OS.get_main_thread_id():
 		return null
 	if _senses == null:
 		_senses = ClassDB.instantiate(SENSES_CLASS)
