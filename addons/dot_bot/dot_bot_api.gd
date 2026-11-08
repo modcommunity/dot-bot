@@ -31,5 +31,6 @@ extends RefCounted
 # 12: DotBotUnstick (no-progress detection and escalation, in the brain for every state); DotBotWorld.walkable_fn and walkable_near.
 # 13: DotBotNav.spread_points and DotBotWorld.extra_waypoints (waypoints from the mesh); roaming bots hunt toward the nearest enemy.
 # 14: DotBotThinkTier (think-rate tiers: which bots think every tick and which every few, for a crowd).
-const LEVEL := 14
+# 15: DotBotWorld.contacts_version, native_enabled, native_available, senses (the sight scan in dot-sim when loaded).
+const LEVEL := 15
 const OLDEST := 1
