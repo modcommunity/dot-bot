@@ -379,6 +379,37 @@ func _test_intent() -> void:
 	_done()
 
 
+func _test_think_tier() -> void:
+	_section("think-rate tiers: watched, fighting and nearest bots every tick, the rest every few")
+
+	var t := DotBotThinkTier.new()
+	var eyes := PackedVector3Array([Vector3.ZERO])
+	var looks := PackedVector3Array([Vector3(0, 0, -1)])
+	var ids := PackedInt32Array([1, 2, 3, 4, 5])
+	# 1 near, 2 in view at 50 m, 3 behind at 30 m, 4 behind at 90 m, 5 behind at 20 m.
+	var at := PackedVector3Array([Vector3(0, 0, 5), Vector3(0, 0, -50), Vector3(0, 0, 30), Vector3(0, 0, 90), Vector3(0, 0, 20)])
+	t.nearest = 1
+	t.begin(16, eyes, looks, ids, at)
+	_check(not t.is_on() and t.period(4, at[3], false) == 1, "at or below bot_tier_above every bot thinks every tick")
+	t.begin(32, eyes, looks, ids, at)
+	_check(t.is_on() and t.period(1, at[0], false) == 1, "the nearest bot thinks every tick")
+	_check(t.period(2, at[1], false) == 1, "a bot in a person's view thinks every tick")
+	_check(t.period(3, at[2], false) == t.near_every and t.period(4, at[3], false) == t.far_every, "unwatched: near_every within far_range, far_every beyond")
+	_check(t.period(4, at[3], true) == 1, "a bot fighting a person thinks every tick")
+	t.nearest = 2
+	t.begin(32, eyes, looks, ids, at)
+	_check(t.period(5, at[4], false) == 1 and t.period(3, at[2], false) == t.near_every, "nearest 2 pins the two closest")
+	t.begin(32, PackedVector3Array(), PackedVector3Array(), ids, at)
+	_check(t.period(1, at[0], false) == t.far_every, "with no person every bot is far")
+	var thinks := 0
+	var tick := 2
+	while tick < 50:
+		thinks += 1
+		tick += DotBotThinkTier.until_beat(tick, 3, 4)
+	_check(thinks == 13 and tick == 53 and DotBotThinkTier.until_beat(7, 3, 1) == 1, "a period of 4 thinks on its beat from the first think on; 1 every tick")
+	_done()
+
+
 func _test_fire_mode() -> void:
 	_section("DotBotFireMode picks by range")
 	var f := DotBotFireMode.new()

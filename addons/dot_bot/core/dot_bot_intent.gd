@@ -76,12 +76,19 @@ func write_fire(command: Object, throw_button: String = "") -> void:
 		_button(command, throw_button, throw)
 
 
+## Script -> its constant map: get_script_constant_map builds a new Dictionary per call, six times per bot per tick.
+static var _constants: Dictionary = {}
+
+
 static func _button(command: Object, constant: String, pressed: bool) -> void:
 	var script: Variant = command.get_script()
 	if not (script is Script) or not command.has_method(&"set_button"):
 		return
-	var constants := (script as Script).get_script_constant_map()
-	if constants.has(constant):
+	var constants: Variant = _constants.get(script)
+	if constants == null:
+		constants = (script as Script).get_script_constant_map()
+		_constants[script] = constants
+	if (constants as Dictionary).has(constant):
 		command.call(&"set_button", int(constants[constant]), pressed)
 
 
