@@ -151,6 +151,7 @@ var _unstick: DotBotUnstick = null
 var _now: float = NAN
 var _was_alive: bool = true
 var _rng: DotRandomStream = null
+var _fight_io := PackedFloat64Array()
 
 
 func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
@@ -158,6 +159,7 @@ func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
 	settings = p_settings if p_settings != null else DotBotSettings.new()
 	aim = DotBotAim.new(p_id, settings)
 	_rng = DotRandomStream.new(p_id).stream(&"dot_bot")
+	aim._set_brain_key(_rng._key)
 	_unstick = DotBotUnstick.new(_rng)
 	goal = DotBotGoal.new(p_id)
 
@@ -491,6 +493,8 @@ func _hear(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, 
 func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	var eye := me.eye()
 	var speed := world.projectile_speed(me) if world != null else 0.0
+	if aim._n != null and not aim.aim_solver.is_valid() and _fight_native(me, c, eye, speed, p, now, dt, out):
+		return
 	var _view := aim.track(eye, c.aim_point(), c.velocity, now, dt, speed)
 
 	var flat := Vector2(c.position.x - me.position.x, c.position.z - me.position.z)
@@ -558,6 +562,62 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 		_set_move(out, _toward(me, world, goal.dest) + Vector2(-dir.y, dir.x) * side * 0.35)
 		return
 	_set_move(out, dir * forward + Vector2(-dir.y, dir.x) * side)
+
+
+## [method _fight] in one call to the aim's native mind: the same arithmetic, rolls and random
+## draws, so the intent, the aim and the stream come back as the script would have left them.
+## False (the script then runs) if the mind refused the call.
+func _fight_native(me: DotBotContact, c: DotBotContact, eye: Vector3, speed: float, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> bool:
+	var io := _fight_io
+	_fight_io = PackedFloat64Array()  # one owner, so the writes below do not copy
+	if io.size() != 35:
+		io.resize(35)
+	io[0] = aim.yaw
+	io[1] = aim.pitch
+	io[2] = aim.react_at
+	io[3] = aim.engaged_at
+	io[4] = aim.first_shot_at
+	io[5] = aim.first_shot_error
+	io[6] = _rng._counter
+	io[7] = now
+	io[8] = dt
+	io[9] = speed
+	io[10] = me.health
+	io[11] = 1.0 if _roll_stop else 0.0
+	io[12] = 1.0 if _roll_crouch else 0.0
+	io[13] = 1.0 if _roll_cover else 0.0
+	io[14] = _hesitate_until
+	io[15] = _strafe
+	io[16] = _strafe_until
+	io[17] = _strafe_eased
+	io = aim._pack_profile(io, 18)
+	io[30] = p.range
+	io[31] = p.strafe
+	io[32] = p.strafe_jitter
+	io[33] = p.strafe_time
+	io[34] = p.jump
+	_fight_io = io
+	var r: PackedFloat64Array = aim._n.fight(eye, c.aim_point(), c.velocity, me.position, c.position, io)
+	if r.size() < 15:
+		aim._demote()
+		return false
+	aim.yaw = r[0]
+	aim.pitch = r[1]
+	aim.first_shot_at = r[2]
+	aim.first_shot_error = r[3]
+	_rng._counter = int(r[4])
+	out.fire = r[5] != 0.0
+	out.crouch = r[6] != 0.0
+	out.jump = r[7] != 0.0
+	out.move = Vector2(r[8], r[9])
+	var retreat := r[11] != 0.0
+	out.state = &"retreat" if retreat else &"fight"
+	_scene = &"flee" if r[10] == 2.0 else (&"close" if r[10] == 1.0 else &"fight")
+	_scene_up = c.position.y - me.position.y
+	_strafe = r[12]
+	_strafe_until = r[13]
+	_strafe_eased = r[14]
+	return true
 
 
 func _search(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:

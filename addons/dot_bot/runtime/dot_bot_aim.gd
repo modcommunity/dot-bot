@@ -78,10 +78,87 @@ var _burst_until: float = -INF
 var _pause_until: float = -INF
 var _rng: DotRandomStream = null
 
+## The dot_sim extension's class that runs this aim natively (and the brain's fight step).
+const MIND_CLASS := &"DotSimBotMind"
+
+## Whether new aims think natively when the dot_sim extension is loaded (the default). Off, every
+## aim made from then on runs the script below; the two make the same decisions to the bit.
+static var native_enabled := true
+static var _native_known := -1
+
+## The native mind holding the private state above, or null when the script holds it. A caller
+## that assigns [member aim_solver] moves the state back into the script (the solver is script).
+var _n: Object = null
+
 
 func _init(id: int = 0, p_settings: DotBotSettings = null) -> void:
 	settings = p_settings if p_settings != null else DotBotSettings.new()
 	_rng = DotRandomStream.new(id).stream(&"dot_bot_aim")
+	if native_enabled and native_available():
+		_n = ClassDB.instantiate(MIND_CLASS)
+		_n.set_keys(_rng._key, 0)
+
+
+## Whether the dot_sim extension provides [constant MIND_CLASS].
+static func native_available() -> bool:
+	if _native_known < 0:
+		_native_known = 1 if ClassDB.class_exists(MIND_CLASS) else 0
+	return _native_known == 1
+
+
+## Whether this aim is thinking natively.
+func is_native() -> bool:
+	return _n != null
+
+
+## The brain's own stream key, for the native fight step ([DotBotBrain] sets it).
+func _set_brain_key(key: int) -> void:
+	if _n != null:
+		_n.set_keys(_rng._key, key)
+
+
+## Moves the private state from the native mind back into the script, which runs from here on.
+func _demote() -> void:
+	if _n == null:
+		return
+	var s: PackedFloat64Array = _n.state()
+	_n = null
+	_err_mag0 = s[0]
+	_err_angle = s[1]
+	_err_spin = s[2]
+	_over = Vector2(s[3], s[4])
+	_vel_est = Vector3(s[5], s[6], s[7])
+	_prev_gap = s[8]
+	_flinch = s[9]
+	_want = Vector2(s[10], s[11])
+	_want_prev = Vector2(s[12], s[13])
+	_in_burst = s[14] != 0.0
+	_burst_until = s[15]
+	_pause_until = s[16]
+	_rng._counter = int(s[17])
+
+
+## [param io] with the aim profile written in the native mind's order from [param at]. Packed
+## arrays are copy-on-write values, so the caller keeps the returned one.
+func _pack_profile(io: PackedFloat64Array, at: int) -> PackedFloat64Array:
+	var p := settings.profile
+	io[at] = p.prediction
+	io[at + 1] = p.track_lag
+	io[at + 2] = p.overshoot
+	io[at + 3] = p.aim_floor
+	io[at + 4] = p.aim_settle
+	io[at + 5] = p.fire_cone
+	io[at + 6] = p.turn_smooth
+	io[at + 7] = p.turn_rate
+	io[at + 8] = p.max_range
+	io[at + 9] = p.burst_range
+	io[at + 10] = p.burst
+	io[at + 11] = p.burst_pause
+	return io
+
+
+var _track_io := PackedFloat64Array()
+var _trigger_io := PackedFloat64Array()
 
 
 ## The view going into this tick, from the body.
@@ -101,6 +178,19 @@ func engage(id: int, eye: Vector3, point: Vector3, now: float) -> bool:
 		return false
 
 	var p := settings.profile
+	if _n != null:
+		var n_resumed := id == target_id and now - last_seen_at <= minf(p.memory, RESUME_WINDOW)
+		var n_off := rad_to_deg(direction(yaw, pitch).angle_to(point - eye)) if eye.distance_to(point) > 0.01 else 0.0
+		target_id = id
+		last_seen_at = now
+		react_at = _n.engage(n_resumed, now, n_off, p.reaction, p.react_jitter, p.notice, p.aim_error)
+		if n_resumed:
+			return false
+		engaged_at = now
+		seen_at = now
+		first_shot_at = NAN
+		first_shot_error = NAN
+		return true
 	var jitter := 0.85 + 0.3 * _rng.next_unit()
 	var resumed := id == target_id and now - last_seen_at <= minf(p.memory, RESUME_WINDOW)
 	var off := rad_to_deg(direction(yaw, pitch).angle_to(point - eye)) if eye.distance_to(point) > 0.01 else 0.0
@@ -133,6 +223,9 @@ func engage(id: int, eye: Vector3, point: Vector3, now: float) -> bool:
 
 ## Lets the target go (out of sight, dead, or something else matters more).
 func release() -> void:
+	if _n != null:
+		_n.release()
+		return
 	_in_burst = false
 	_over = Vector2.ZERO
 	_want = Vector2(NAN, NAN)
@@ -140,14 +233,20 @@ func release() -> void:
 
 ## Forgets the target entirely: the next sight of it is a new engagement.
 func forget() -> void:
-	release()
 	target_id = -1
 	last_seen_at = -INF
+	if _n != null:
+		_n.forget()
+		return
+	release()
 	_want_prev = Vector2(NAN, NAN)
 
 
 ## A hit: the aim gets worse for a moment.
 func hurt() -> void:
+	if _n != null:
+		_n.hurt(settings.profile.flinch)
+		return
 	_flinch += settings.profile.flinch
 
 
@@ -155,6 +254,23 @@ func hurt() -> void:
 ## the engagement's aim error, and returns the new (yaw, pitch). [param velocity] is the
 ## target's; [param projectile_speed] is 0 for a hitscan weapon.
 func track(eye: Vector3, point: Vector3, velocity: Vector3, now: float, dt: float, projectile_speed: float = 0.0) -> Vector2:
+	if _n != null:
+		if aim_solver.is_valid():
+			_demote()
+		else:
+			if _track_io.size() != 18:
+				_track_io.resize(18)
+			_track_io[0] = yaw
+			_track_io[1] = pitch
+			_track_io[2] = engaged_at
+			_track_io[3] = now
+			_track_io[4] = dt
+			_track_io[5] = projectile_speed
+			_track_io = _pack_profile(_track_io, 6)
+			var v: PackedFloat64Array = _n.track(eye, point, velocity, _track_io)
+			yaw = v[0]
+			pitch = v[1]
+			return Vector2(yaw, pitch)
 	var p := settings.profile
 	_decay(dt)
 	var aim := point - velocity * (1.0 - p.prediction) * TRACK_LAG
@@ -198,6 +314,12 @@ func _overshoot(want: Vector2, dt: float) -> Vector2:
 
 ## Turns the view toward [param point] with no aim error (looking, not shooting).
 func look_at_point(eye: Vector3, point: Vector3, dt: float) -> Vector2:
+	if _n != null:
+		var p := settings.profile
+		var v: PackedFloat64Array = _n.look(yaw, pitch, eye, point, dt, p.prediction, p.turn_smooth, p.turn_rate)
+		yaw = v[0]
+		pitch = v[1]
+		return Vector2(yaw, pitch)
 	_decay(dt)
 	_want = Vector2(NAN, NAN)
 	turn_to(angles_to(eye, point), dt)
@@ -208,6 +330,14 @@ func look_at_point(eye: Vector3, point: Vector3, dt: float) -> Vector2:
 ## within bot_max_range, and in a burst beyond bot_burst_range. Call once a tick, after
 ## [method track]; [param distance] is to the target.
 func trigger(now: float, distance: float) -> bool:
+	if _n != null:
+		if _trigger_io.size() != 15:
+			_trigger_io.resize(15)
+		_trigger_io[0] = yaw
+		_trigger_io[1] = pitch
+		_trigger_io[2] = react_at
+		_trigger_io = _pack_profile(_trigger_io, 3)
+		return _n.trigger(now, distance, _trigger_io)
 	var p := settings.profile
 	var can := now >= react_at and on_aim() and distance <= p.max_range
 	var down := false
@@ -236,6 +366,8 @@ func note_shot(eye: Vector3, point: Vector3, now: float) -> void:
 
 ## Whether the view is within bot_fire_cone of where the bot means to aim.
 func on_aim() -> bool:
+	if _n != null:
+		return _n.on_aim(yaw, pitch, settings.profile.fire_cone)
 	if is_nan(_want.x):
 		return false
 	return rad_to_deg(direction(yaw, pitch).angle_to(direction(_want.x, _want.y))) <= settings.profile.fire_cone
@@ -245,6 +377,8 @@ func on_aim() -> bool:
 ## floor, plus whatever being hit added.
 func error_deg(now: float) -> float:
 	var p := settings.profile
+	if _n != null:
+		return _n.error_deg(now, engaged_at, p.aim_floor, p.aim_settle)
 	var age := maxf(now - engaged_at, 0.0) if engaged_at > -INF else 0.0
 	var settled := p.aim_floor + maxf(_err_mag0 - p.aim_floor, 0.0) * pow(0.5, age / maxf(p.aim_settle, 0.01))
 	return settled + _flinch
@@ -254,6 +388,11 @@ func error_deg(now: float) -> float:
 ## prediction lets it, the rest closed smoothly, and the whole step no faster than turn_rate.
 func turn_to(want: Vector2, dt: float) -> void:
 	var p := settings.profile
+	if _n != null:
+		var v: PackedFloat64Array = _n.turn(yaw, pitch, want, dt, p.prediction, p.turn_smooth, p.turn_rate)
+		yaw = v[0]
+		pitch = v[1]
+		return
 	if dt <= 0.0:
 		_want_prev = want
 		return
