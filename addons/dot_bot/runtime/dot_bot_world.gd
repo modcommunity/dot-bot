@@ -80,8 +80,68 @@ var sounds: Array[Dictionary] = []
 var _seq: int = 0
 
 
+## Bumped by the game whenever [method contacts] holds a new tick's bodies (the tick number serves);
+## the bodies must not change until the next bump, since the native scan packs them once per value.
+## At -1, the default, the sight scan stays in script: see [method senses].
+var contacts_version: int = -1
+
+## The native sight scan's class (dot-sim). Absent, every bot scans in script, as before.
+const SENSES_CLASS := &"DotSimBotSenses"
+
+## Whether the native sight scan is used when present; a suite turns it off to compare.
+static var native_enabled: bool = true
+
+static var _native_known: int = -1
+var _senses: Object = null
+var _senses_version: int = -2
+var _sensed: Array = []
+
+
 func contacts() -> Array:
 	return contacts_fn.call() if contacts_fn.is_valid() else []
+
+
+## Whether dot-sim's native sight scan is loaded (never on the web, where no extension is).
+static func native_available() -> bool:
+	if _native_known < 0:
+		_native_known = 1 if ClassDB.class_exists(SENSES_CLASS) else 0
+	return native_enabled and _native_known == 1
+
+
+## The native sight scan over [param all] packed once for this [member contacts_version], or null
+## (no extension, the game does not bump the version, or a worker thread: brains thinking on threads
+## scan in script, since the scan keeps its last answer); [method sensed] maps its indices back.
+func senses(all: Array) -> Object:
+	if contacts_version < 0 or not native_available() or OS.get_thread_caller_id() != OS.get_main_thread_id():
+		return null
+	if _senses == null:
+		_senses = ClassDB.instantiate(SENSES_CLASS)
+	if _senses_version != contacts_version:
+		_senses_version = contacts_version
+		_pack(all)
+	return _senses
+
+
+## The bodies the last [method senses] packed, in its index order.
+func sensed() -> Array:
+	return _sensed
+
+
+func _pack(all: Array) -> void:
+	_sensed = []
+	var ids := PackedInt64Array()
+	var points := PackedVector3Array()
+	var teams := PackedInt32Array()
+	var alive := PackedByteArray()
+	for item in all:
+		if item is DotBotContact:
+			var c := item as DotBotContact
+			_sensed.append(c)
+			ids.append(c.id)
+			points.append(c.aim_point())
+			teams.append(c.team)
+			alive.append(1 if c.alive else 0)
+	_senses.call(&"load_contacts", ids, points, teams, alive)
 
 
 ## `{center, radius, until}` per sight blocker (smoke), by id; a segment through one is not clear.

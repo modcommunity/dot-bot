@@ -288,7 +288,8 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	# Candidates inside range and cone come first; the sight test is the dear part, so it is
 	# asked of the current target and then of the best score only until one is seen.
 	var scores := PackedFloat32Array()
-	var cand := _candidates(me, all, p, eye, forward, half, scores)
+	var senses := world.senses(all) if world != null else null
+	var cand := _candidates_native(senses, world, me, p, eye, forward, half, scores) if senses != null else _candidates(me, all, p, eye, forward, half, scores)
 
 	if _visible:
 		for i in cand.size():
@@ -363,6 +364,21 @@ func _candidates(me: DotBotContact, all: Array, p: DotBotProfile, eye: Vector3, 
 			continue
 		cand.append(c)
 		scores.append(d * (1.0 + off / 60.0))
+	return cand
+
+
+## [method _candidates] by dot-sim's native scan over the tick's packed bodies: the same list, scores and forgetting.
+func _candidates_native(senses: Object, world: DotBotWorld, me: DotBotContact, p: DotBotProfile, eye: Vector3, forward: Vector3, half: float, scores: PackedFloat32Array) -> Array[DotBotContact]:
+	var cand: Array[DotBotContact] = []
+	var idx: PackedInt32Array = senses.call(&"candidates", me.id, me.team, eye, forward, half, p.sight, CLOSE_NOTICE, target_id, _visible)
+	if senses.call(&"target_dead"):
+		_forget_target()
+	if idx.is_empty():
+		return cand
+	var list := world.sensed()
+	for i in idx:
+		cand.append(list[i])
+	scores.append_array(senses.call(&"scores"))
 	return cand
 
 
