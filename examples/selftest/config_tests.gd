@@ -396,6 +396,14 @@ func _test_think_tier() -> void:
 	_check(t.period(2, at[1], false) == 1, "a bot in a person's view thinks every tick")
 	_check(t.period(3, at[2], false) == t.near_every and t.period(4, at[3], false) == t.far_every, "unwatched: near_every within far_range, far_every beyond")
 	_check(t.period(4, at[3], true) == 1, "a bot fighting a person thinks every tick")
+	t.engaged_far_every = 2
+	_check(t.period(4, at[3], true) == 2 and t.period(3, at[2], true) == 2 and t.period(5, at[4], true) == 1 and t.period(2, at[1], true) == 1, "engaged_far_every: a fighting bot beyond engaged_range and out of view thins out, nearer or seen stays full")
+	t.load_scale = 2.0
+	_check(t.period(4, at[3], true) == 4 and t.period(5, at[4], true) == 1 and t.period(3, at[2], false) == t.near_every * 2 and t.period(1, at[0], false) == 1, "load_scale stretches the thinned periods, full-rate bots stay full")
+	t.load_scale = 100.0
+	_check(t.period(4, at[3], false) == DotBotThinkTier.MAX_PERIOD, "a stretched period stops at MAX_PERIOD")
+	t.load_scale = 1.0
+	t.engaged_far_every = 1
 	t.nearest = 2
 	t.begin(32, eyes, looks, ids, at)
 	_check(t.period(5, at[4], false) == 1 and t.period(3, at[2], false) == t.near_every, "nearest 2 pins the two closest")
