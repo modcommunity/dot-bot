@@ -5,10 +5,15 @@ extends Node
 ## dot_sim's DotSimBotMind and one in GDScript, compared to the bit every tick (intent, view,
 ## engagement, strafe, the random streams and the aim's private state). Needs the dot_sim
 ## extension; without it there is nothing to compare and the scene says so and passes.
+## The native side's world also bumps contacts_version every tick, so it perceives through
+## DotSimBotMind.perceive over the native sight scan, with bystanders to choose among and the
+## target killed late in some rounds.
 
 const TICK := 1.0 / 30.0
 const ROUNDS := 12
 const SECONDS := 14.0
+## Other enemies standing about, to choose among.
+const BYSTANDERS := 6
 
 var _ticks := 0
 var _fights := 0
@@ -27,6 +32,9 @@ func _run() -> void:
 		print("native parity: DotSimBotMind not loaded, nothing to compare (skipped)")
 		get_tree().quit(0)
 		return
+	# `-- --script-perceive`: the native side perceives in script, to time the native perceive.
+	if "--script-perceive" in OS.get_cmdline_user_args():
+		DotBotBrain.native_perceive = false
 	var presets := ["easy", "medium", "hard", "nightmare"]
 	for round_ in ROUNDS:
 		_round(round_, presets[round_ % presets.size()])
@@ -38,7 +46,7 @@ func _run() -> void:
 		print("native parity: FAIL ", _failed)
 		get_tree().quit(1)
 		return
-	print("native parity: ok, %d ticks over %d rounds (%d fighting, %d firing), native and script identical; think %.1f us native, %.1f us script" % [_ticks, ROUNDS, _fights, _fires, float(_usec[0]) / _ticks, float(_usec[1]) / _ticks])
+	print("native parity: ok, %d ticks over %d rounds (%d fighting, %d firing), native and script identical; think %.1f us native (perceive %s), %.1f us script" % [_ticks, ROUNDS, _fights, _fires, float(_usec[0]) / _ticks, "native" if DotBotBrain.native_perceive else "script", float(_usec[1]) / _ticks])
 	get_tree().quit(0)
 
 
@@ -63,25 +71,36 @@ func _round(round_: int, preset: String) -> void:
 	var distance := rng.next_range_f(5.0, 40.0)
 	var off := deg_to_rad(rng.next_range_f(-170.0, 170.0))
 	var start := Vector3(-sin(off), 0.0, -cos(off)) * distance
+	var spots: Array[Vector3] = []
+	for b in BYSTANDERS:
+		var a := deg_to_rad(rng.next_range_f(-180.0, 180.0))
+		spots.append(Vector3(-sin(a), 0.0, -cos(a)) * rng.next_range_f(3.0, 60.0))
 	var sides: Array = []
 	for native in [true, false]:
 		var me := DotBotContact.make(1, Vector3.ZERO)
 		var them := DotBotContact.make(2, start)
+		var all: Array = [me, them]
+		for b in BYSTANDERS:
+			all.append(DotBotContact.make(10 + b, spots[b]))
 		var world := DotBotWorld.new()
 		var wall := [false]
-		world.contacts_fn = func() -> Array: return [me, them]
-		world.line_of_sight_fn = func(_a: Vector3, _b: Vector3) -> bool: return not wall[0]
+		world.contacts_fn = func() -> Array: return all
+		# The wall hides the target, and the far side of the field from the near.
+		world.line_of_sight_fn = func(a: Vector3, b: Vector3) -> bool: return not wall[0] and (a.distance_to(b) < 30.0 or b.x > a.x)
 		var brain := DotBotBrain.new(round_ * 13 + 5, _settings(preset, round_))
 		if not native:
 			brain.aim._demote()
-		sides.append({"me": me, "them": them, "world": world, "wall": wall, "brain": brain})
-	if not (sides[0].brain as DotBotBrain).aim.is_native() or (sides[1].brain as DotBotBrain).aim.is_native():
+			brain._mind = null
+		sides.append({"me": me, "them": them, "world": world, "wall": wall, "brain": brain, "native": native})
+	if not (sides[0].brain as DotBotBrain).aim.is_native() or (sides[1].brain as DotBotBrain).aim.is_native() or DotBotBrain.native_perceive and (sides[0].brain as DotBotBrain)._mind == null:
 		_failed = "round %d: could not set up one native and one script brain" % round_
 		return
 
 	var t := 0.0
 	var dir := 1.0
+	var tick := 0
 	while t < SECONDS:
+		tick += 1
 		if fmod(t, 0.9) < TICK:
 			dir = -dir
 		var rows: Array = []
@@ -92,6 +111,10 @@ func _round(round_: int, preset: String) -> void:
 			var brain: DotBotBrain = side.brain
 			# Out of sight for a while (search, look round), then back.
 			side.wall[0] = t > 6.0 and t < 7.5
+			if round_ % 3 == 1 and t > 11.0:
+				them.alive = false
+			if side.native:
+				side.world.contacts_version = tick
 			if absf(t - 3.0) < TICK * 0.5 or absf(t - 9.0) < TICK * 0.5:
 				brain.hurt(them.eye(), t)
 				me.health = 0.3 if t > 8.0 else 0.6
@@ -109,6 +132,9 @@ func _round(round_: int, preset: String) -> void:
 			them.velocity = across * 4.0 * dir
 			them.position += them.velocity * TICK
 			rows.append(_row(brain, intent))
+			if side.native and DotBotBrain.native_perceive and (side.world as DotBotWorld)._senses == null:
+				_failed = "round %d: the native side never packed a native scan" % round_
+				return
 		var why := _differs(rows[0], rows[1])
 		if why != "":
 			_failed = "round %d (%s) t=%.3f: %s" % [round_, preset, t, why]
