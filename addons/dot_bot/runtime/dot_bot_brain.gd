@@ -153,6 +153,16 @@ var _was_alive: bool = true
 var _rng: DotRandomStream = null
 var _fight_io := PackedFloat64Array()
 
+## Whether brains perceive natively (DotSimBotMind.perceive over the world's native sight scan)
+## when they can; off, they perceive in script. The two choose the same to the bit.
+static var native_perceive := true
+static var _perceive_known := -1
+
+## This brain's DotSimBotMind (the aim's, kept when the aim falls back to script): it holds the
+## sight cache, and perceives when the world packed a native scan this tick. Null: all in script.
+var _mind: Object = null
+var _los := Callable()
+
 
 func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
 	id = p_id
@@ -160,8 +170,18 @@ func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
 	aim = DotBotAim.new(p_id, settings)
 	_rng = DotRandomStream.new(p_id).stream(&"dot_bot")
 	aim._set_brain_key(_rng._key)
+	if aim._n != null and _perceive_available():
+		_mind = aim._n
 	_unstick = DotBotUnstick.new(_rng)
 	goal = DotBotGoal.new(p_id)
+
+
+## Moves this brain wholly into script (the aim's state, and no native perceive or sight cache from
+## here on). Call it on the main thread before the brain first thinks on a worker thread: godot-rust
+## objects may only be touched from the main thread, so a brain that thinks on workers runs in script.
+func leave_native() -> void:
+	aim._demote()
+	_mind = null
 
 
 ## What this bot does this tick.
@@ -304,12 +324,63 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 			_lose(p, now)
 		return null
 	var eye := me.eye()
-	var forward := DotBotAim.direction(aim.yaw, aim.pitch)
 	var half := p.fov * 0.5
+	var through := p.through_walls >= 0.5 or world == null
+	# The native mind scans, keeps or picks and asks sight in one call when the world packed this
+	# tick's bodies for the native scan (main thread only); else the script does it all.
+	var senses := world.senses(all) if world != null and _mind != null else null
+	var chosen: DotBotContact = null
+	var picked := false
+	if senses != null and _mind != null:
+		if _los.get_object() != world:
+			_los = Callable(world, &"line_of_sight")
+		var r: PackedInt32Array = _mind.perceive(senses, me.id, me.team, eye, aim.yaw, aim.pitch, half, p.sight, target_id, (1 if _visible else 0) | (2 if through else 0), now, world.sight_stamp(), _los)
+		if r.size() == 2:
+			picked = true
+			if r[1] != 0:
+				_forget_target()
+			if r[0] >= 0:
+				chosen = world.sensed()[r[0]]
+	if not picked:
+		chosen = _choose(me, all, world, p, eye, half, through, now)
+
+	if chosen == null:
+		if _visible:
+			_lose(p, now)
+		return null
+
+	if aim.engage(chosen.id, eye, chosen.aim_point(), now):
+		# A new engagement: how this fight will go, rolled once.
+		_roll_stop = _rng.next_unit() < p.stop_to_shoot
+		_roll_crouch = _rng.next_unit() < p.crouch
+		_roll_cover = _rng.next_unit() < p.cover
+		if p.hesitate > 0.0:
+			_hesitate_until = now + p.hesitate * (0.3 + 0.7 * _rng.next_unit())
+		DotLog.trace(CHANNEL, "bot acquires a target", {"bot": id, "target": chosen.id})
+
+	_visible = true
+	target_id = chosen.id
+	_last_seen_pos = chosen.position
+	_last_seen_vel = chosen.velocity
+	_last_seen_at = now
+	_known_enemy = chosen.position
+	return chosen
+
+
+## Whether the dot_sim extension's DotSimBotMind perceives (and [member native_perceive] lets it).
+static func _perceive_available() -> bool:
+	if _perceive_known < 0:
+		_perceive_known = 1 if ClassDB.class_exists(DotBotAim.MIND_CLASS) and ClassDB.class_has_method(DotBotAim.MIND_CLASS, &"perceive") else 0
+	return native_perceive and _perceive_known == 1
+
+
+## [method _perceive]'s choice in script: the current target while it is in sight, else the best
+## score that is.
+func _choose(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, eye: Vector3, half: float, through: bool, now: float) -> DotBotContact:
+	var forward := DotBotAim.direction(aim.yaw, aim.pitch)
 	var current: DotBotContact = null
 	var best: DotBotContact = null
 	var best_score := INF
-	var through := p.through_walls >= 0.5 or world == null
 	# Candidates inside range and cone come first; the sight test is the dear part, so it is
 	# asked of the current target and then of the best score only until one is seen.
 	var scores := PackedFloat32Array()
@@ -325,7 +396,7 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 			scores.clear()
 	var cand: Array[DotBotContact] = []
 	if current == null:
-		var senses := world.senses(all) if world != null else null
+		var senses := world.senses(all) if world != null else null  # packed once per contacts_version
 		cand = _candidates_native(senses, world, me, p, eye, forward, half, scores) if senses != null else _candidates(me, all, p, eye, forward, half, scores)
 		if _visible:
 			for i in cand.size():
@@ -349,29 +420,7 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 				break
 			scores[bi] = INF
 
-	var chosen := current if current != null else best
-
-	if chosen == null:
-		if _visible:
-			_lose(p, now)
-		return null
-
-	if aim.engage(chosen.id, eye, chosen.aim_point(), now):
-		# A new engagement: how this fight will go, rolled once.
-		_roll_stop = _rng.next_unit() < p.stop_to_shoot
-		_roll_crouch = _rng.next_unit() < p.crouch
-		_roll_cover = _rng.next_unit() < p.cover
-		if p.hesitate > 0.0:
-			_hesitate_until = now + p.hesitate * (0.3 + 0.7 * _rng.next_unit())
-		DotLog.trace(CHANNEL, "bot acquires a target", {"bot": id, "target": chosen.id})
-
-	_visible = true
-	target_id = chosen.id
-	_last_seen_pos = chosen.position
-	_last_seen_vel = chosen.velocity
-	_last_seen_at = now
-	_known_enemy = chosen.position
-	return chosen
+	return current if current != null else best
 
 
 ## Enemies inside range and cone (or already being fought), appended to the result with their closeness score in [param scores].
@@ -421,6 +470,14 @@ func _candidates_native(senses: Object, world: DotBotWorld, me: DotBotContact, p
 ## Whether [param c] is in line of sight from [param eye]: the chest or the head, reused for [constant SIGHT_REUSE].
 func _sees(world: DotBotWorld, eye: Vector3, c: DotBotContact, now: float) -> bool:
 	var stamp := world.sight_stamp()
+	if _mind != null:
+		# The cache lives in the mind, which may perceive natively next tick.
+		var h: int = _mind.sight_cached(c.id, now, stamp)
+		if h >= 0:
+			return h == 1
+		var seen_n := world.line_of_sight(eye, c.aim_point()) or world.line_of_sight(eye, c.eye())
+		_mind.sight_put(c.id, now, seen_n, stamp)
+		return seen_n
 	var held: Variant = _sight_cache.get(c.id)
 	if not (held is Array):
 		var first := world.line_of_sight(eye, c.aim_point()) or world.line_of_sight(eye, c.eye())
@@ -493,12 +550,21 @@ func _hear(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, 
 func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	var eye := me.eye()
 	var speed := world.projectile_speed(me) if world != null else 0.0
-	if aim._n != null and not aim.aim_solver.is_valid() and _fight_native(me, c, eye, speed, p, now, dt, out):
+	var flat := Vector2(c.position.x - me.position.x, c.position.z - me.position.z)
+	var dist := flat.length()
+	var retreat := _roll_cover and me.health < RETREAT_HEALTH
+	if now - _fight_last > 2.0 or me.position.distance_to(_fight_spot) > STALE_MOVE:
+		_fight_spot = me.position
+		_fight_since = now
+	_fight_last = now
+	# A standoff nobody wins, one target or several: the bot walks in instead of trading misses from one spot.
+	var push := not retreat and dist > STALE_CLOSE and now - _fight_since > STALE_FIGHT
+	var carrying := goal.urgent and goal.dest != Vector3.INF
+	# The native mind has no flag-carrier run home; the carrier stays on the script.
+	if aim._n != null and not carrying and not aim.aim_solver.is_valid() and _fight_native(me, c, eye, speed, p, now, dt, push, out):
 		return
 	var _view := aim.track(eye, c.aim_point(), c.velocity, now, dt, speed)
 
-	var flat := Vector2(c.position.x - me.position.x, c.position.z - me.position.z)
-	var dist := flat.length()
 	var trigger := aim.trigger(now, dist)
 	out.fire = trigger
 	if trigger:
@@ -512,13 +578,6 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 	elif dist < p.range * 0.7:
 		forward = -0.7
 
-	var retreat := _roll_cover and me.health < RETREAT_HEALTH
-	if now - _fight_last > 2.0 or me.position.distance_to(_fight_spot) > STALE_MOVE:
-		_fight_spot = me.position
-		_fight_since = now
-	_fight_last = now
-	# A standoff nobody wins, one target or several: the bot walks in instead of trading misses from one spot.
-	var push := not retreat and dist > STALE_CLOSE and now - _fight_since > STALE_FIGHT
 	if push:
 		forward = 1.0
 	if retreat:
@@ -556,7 +615,7 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 	if not out.crouch and dist < p.burst_range and dt > 0.0 and _rng.next_unit() < p.jump * dt:
 		out.jump = true
 
-	if goal.urgent and goal.dest != Vector3.INF:
+	if carrying:
 		# A flag carrier shoots on the move and keeps running home.
 		out.crouch = false
 		_set_move(out, _toward(me, world, goal.dest) + Vector2(-dir.y, dir.x) * side * 0.35)
@@ -567,11 +626,11 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 ## [method _fight] in one call to the aim's native mind: the same arithmetic, rolls and random
 ## draws, so the intent, the aim and the stream come back as the script would have left them.
 ## False (the script then runs) if the mind refused the call.
-func _fight_native(me: DotBotContact, c: DotBotContact, eye: Vector3, speed: float, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> bool:
+func _fight_native(me: DotBotContact, c: DotBotContact, eye: Vector3, speed: float, p: DotBotProfile, now: float, dt: float, push: bool, out: DotBotIntent) -> bool:
 	var io := _fight_io
 	_fight_io = PackedFloat64Array()  # one owner, so the writes below do not copy
-	if io.size() != 35:
-		io.resize(35)
+	if io.size() != 36:
+		io.resize(36)
 	io[0] = aim.yaw
 	io[1] = aim.pitch
 	io[2] = aim.react_at
@@ -596,6 +655,7 @@ func _fight_native(me: DotBotContact, c: DotBotContact, eye: Vector3, speed: flo
 	io[32] = p.strafe_jitter
 	io[33] = p.strafe_time
 	io[34] = p.jump
+	io[35] = 1.0 if push else 0.0
 	_fight_io = io
 	var r: PackedFloat64Array = aim._n.fight(eye, c.aim_point(), c.velocity, me.position, c.position, io)
 	if r.size() < 15:

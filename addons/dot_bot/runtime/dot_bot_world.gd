@@ -136,6 +136,7 @@ func _pack(all: Array) -> void:
 	var points := PackedVector3Array()
 	var teams := PackedInt32Array()
 	var alive := PackedByteArray()
+	var eyes := PackedVector3Array()
 	for item in all:
 		if item is DotBotContact:
 			var c := item as DotBotContact
@@ -144,7 +145,10 @@ func _pack(all: Array) -> void:
 			points.append(c.aim_point())
 			teams.append(c.team)
 			alive.append(1 if c.alive else 0)
+			eyes.append(c.eye())
 	_senses.call(&"load_contacts", ids, points, teams, alive)
+	if _senses.has_method(&"load_eyes"):
+		_senses.call(&"load_eyes", eyes)
 
 
 ## `{center, radius, until}` per sight blocker (smoke), by id; a segment through one is not clear.
