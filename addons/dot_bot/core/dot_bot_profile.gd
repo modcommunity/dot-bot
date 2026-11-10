@@ -47,8 +47,8 @@ const SPEC := [
 	["aim_settle", 0.05, 10.0, 1.0, 0.5, 0.4, 0.25, "Seconds for the aim error to halve while the fight goes on."],
 	["aim_floor", 0.0, 15.0, 2.0, 1.0, 0.6, 0.3, "Degrees the aim error settles to: it swings between about half and all of this."],
 	["flinch", 0.0, 30.0, 4.0, 3.0, 1.5, 0.6, "Degrees of aim error added each time the bot is hit."],
-	["turn_rate", 30.0, 3600.0, 200.0, 450.0, 600.0, 1000.0, "Fastest the view turns, degrees per second."],
-	["turn_smooth", 0.05, 1.0, 0.3, 0.55, 0.65, 0.85, "How quickly the view closes on where it wants to look (1 is fastest)."],
+	["turn_rate", 30.0, 3600.0, 180.0, 360.0, 480.0, 800.0, "Fastest the view turns, degrees per second."],
+	["turn_smooth", 0.05, 1.0, 0.25, 0.45, 0.55, 0.7, "How quickly the view closes on where it wants to look (1 is fastest)."],
 	["prediction", 0.0, 1.0, 0.25, 0.6, 0.75, 0.95, "How much of a moving target's motion is tracked rather than trailed."],
 	["fire_cone", 0.5, 45.0, 7.0, 5.0, 3.0, 2.0, "Degrees the view may still be off its aim when the bot fires."],
 	# Fighting
@@ -76,6 +76,12 @@ const SPEC := [
 	["map_knowledge", 0.0, 1.0, 0.1, 0.4, 0.7, 1.0, "Chance a roaming bot heads where it last knew of an enemy instead of anywhere."],
 	["pickup_weapons", 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, "1 lets a quiet bot walk to a better weapon lying about and take it with the use key; 0 never."],
 	["pickup_range", 1.0, 100.0, 6.0, 9.0, 12.0, 16.0, "Farthest a bot notices a weapon lying about, metres (it must also see it)."],
+	# Objective: team games that hand the bots a DotBotObjective (capture the flag).
+	["role_defend", 0.0, 1.0, 0.3, 0.3, 0.3, 0.3, "Share of a team's bots that guard their own flag."],
+	["role_attack", 0.0, 1.0, 0.4, 0.4, 0.4, 0.4, "Share of a team's bots that go for the enemy flag and bring it home."],
+	["role_support", 0.0, 1.0, 0.3, 0.3, 0.3, 0.3, "Share of a team's bots that escort their carrier or push the middle."],
+	["objective_focus", 0.0, 1.0, 0.6, 0.8, 0.9, 0.95, "Chance a bot keeps to its role each time it plans, rather than wandering for a while (a carrier always heads home)."],
+	["defend_radius", 3.0, 80.0, 14.0, 14.0, 14.0, 14.0, "Metres around its flag a defender patrols; it chases no further than twice this."],
 	["policy", 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, "Share of bots driven by the cloned policy (0 none, 1 all). Off in every preset; it also needs a net and a passing evaluation gate for the map."],
 	# Humanisation: every one is 0 for the old, exact behaviour.
 	["react_jitter", 0.0, 2.0, 0.5, 0.3, 0.3, 0.25, "How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way)."],
@@ -110,8 +116,8 @@ const COL_HELP := 7
 @export var aim_settle: float = 0.5
 @export var aim_floor: float = 1.0
 @export var flinch: float = 3.0
-@export var turn_rate: float = 450.0
-@export var turn_smooth: float = 0.55
+@export var turn_rate: float = 360.0
+@export var turn_smooth: float = 0.45
 @export var prediction: float = 0.6
 @export var fire_cone: float = 5.0
 
@@ -142,6 +148,13 @@ const COL_HELP := 7
 @export var pickup_weapons: float = 1.0
 @export var pickup_range: float = 9.0
 @export var policy: float = 0.0
+
+@export_group("Objective")
+@export var role_defend: float = 0.3
+@export var role_attack: float = 0.4
+@export var role_support: float = 0.3
+@export var objective_focus: float = 0.8
+@export var defend_radius: float = 14.0
 
 @export_group("Humanisation")
 @export var react_jitter: float = 0.3

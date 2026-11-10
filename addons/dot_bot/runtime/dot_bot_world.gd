@@ -70,6 +70,9 @@ var walkable_fn: Callable = Callable()
 ## Unset: none, and no bot goes for one.
 var drops_fn: Callable = Callable()
 
+## The flags and each bot's team job in a flag mode, or null; brains read it, the game writes it.
+var objective: DotBotObjective = null
+
 ## Recent sounds: dictionaries with position, loudness (1 is a gunshot), source (an id), at
 ## and seq.
 var sounds: Array[Dictionary] = []

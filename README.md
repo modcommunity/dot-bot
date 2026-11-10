@@ -121,8 +121,8 @@ game-hide-n-seek's `game/hs_bots.gd` is the worked example.
 | `bot_aim_settle` | 1 | 0.5 | 0.4 | 0.25 | 0.05 to 10 | Seconds for the aim error to halve while the fight goes on. |
 | `bot_aim_floor` | 2 | 1 | 0.6 | 0.3 | 0 to 15 | Degrees the aim error settles to: it swings between about half and all of this. |
 | `bot_flinch` | 4 | 3 | 1.5 | 0.6 | 0 to 30 | Degrees of aim error added each time the bot is hit. |
-| `bot_turn_rate` | 200 | 450 | 600 | 1000 | 30 to 3600 | Fastest the view turns, degrees per second. |
-| `bot_turn_smooth` | 0.3 | 0.55 | 0.65 | 0.85 | 0.05 to 1 | How quickly the view closes on where it wants to look (1 is fastest). |
+| `bot_turn_rate` | 180 | 360 | 480 | 800 | 30 to 3600 | Fastest the view turns, degrees per second. |
+| `bot_turn_smooth` | 0.25 | 0.45 | 0.55 | 0.7 | 0.05 to 1 | How quickly the view closes on where it wants to look (1 is fastest). |
 | `bot_prediction` | 0.25 | 0.6 | 0.75 | 0.95 | 0 to 1 | How much of a moving target's motion is tracked rather than trailed. |
 | `bot_fire_cone` | 7 | 5 | 3 | 2 | 0.5 to 45 | Degrees the view may still be off its aim when the bot fires. |
 | `bot_range` | 8 | 10 | 12 | 12 | 1 to 100 | Distance the bot likes to fight at, metres. |
@@ -148,6 +148,11 @@ game-hide-n-seek's `game/hs_bots.gd` is the worked example.
 | `bot_map_knowledge` | 0.1 | 0.4 | 0.7 | 1 | 0 to 1 | Chance a roaming bot heads where it last knew of an enemy instead of anywhere. |
 | `bot_pickup_weapons` | 1 | 1 | 1 | 1 | 0 or 1 | 1 lets a quiet bot walk to a better weapon lying about and take it with the use key; 0 never. |
 | `bot_pickup_range` | 6 | 9 | 12 | 16 | 1 to 100 m | Farthest a bot notices a weapon lying about (it must also see it). |
+| `bot_role_defend` | 0.3 | 0.3 | 0.3 | 0.3 | 0 to 1 | Share of a team's bots that guard their flag in a flag mode. |
+| `bot_role_attack` | 0.4 | 0.4 | 0.4 | 0.4 | 0 to 1 | Share that go for the enemy flag. |
+| `bot_role_support` | 0.3 | 0.3 | 0.3 | 0.3 | 0 to 1 | Share that escort a carrier or hold the middle. All three 0: every bot roams. |
+| `bot_objective_focus` | 0.6 | 0.8 | 0.9 | 0.95 | 0 to 1 | How steadily a bot keeps to its team job; the rest of the time it roams a few seconds. |
+| `bot_defend_radius` | 14 | 14 | 14 | 14 | 3 to 80 | Metres around its flag a defender patrols; it chases no further than twice this. |
 | `bot_policy` | 0 | 0 | 0 | 0 | 0 to 1 | Share of bots driven by the cloned policy (`DotBotPolicy`); needs a net and a passing gate report for the map. |
 | `bot_react_jitter` | 0.5 | 0.3 | 0.3 | 0.25 | 0 to 2 | How unevenly the reaction time varies between sightings (0 is the plain 15 percent either way). |
 | `bot_overshoot` | 0.6 | 0.4 | 0.4 | 0.3 | 0 to 1 | How far a fast turn onto a target swings past it before coming back (0 is none). |

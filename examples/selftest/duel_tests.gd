@@ -3,9 +3,10 @@ extends "res://examples/selftest/harvest_tests.gd"
 
 ## K/D against the scripted opponent ([method _duel]), per preset: [low, high].
 ## Medium sits a little under an ordinary player, hard wins most fights, nightmare nearly all.
+## Medium's floor dropped with its slower, human turning: it loses more first shots now.
 const KD_BANDS := {
 	"easy": [0.0, 0.35],
-	"medium": [0.35, 1.5],
+	"medium": [0.25, 1.5],
 	"hard": [2.0, 30.0],
 	"nightmare": [8.0, 1000.0],
 }

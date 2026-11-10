@@ -18,7 +18,7 @@ const LOOK_EVERY := 0.35
 const COOLDOWN := 1.2
 
 ## Scenario weights: how much a situation wants a trick, against 1 for a charge across a map.
-const WEIGHTS := {&"close": 1.0, &"chase": 1.0, &"flee": 1.4, &"roam": 0.35}
+const WEIGHTS := {&"close": 1.0, &"chase": 1.0, &"flee": 1.4, &"roam": 0.2}
 
 enum Phase { IDLE, SLIDE_WAIT, SLIDING, AIR, RIDE }
 

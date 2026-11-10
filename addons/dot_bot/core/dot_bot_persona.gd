@@ -99,5 +99,19 @@ func profile_over(base: DotBotProfile) -> DotBotProfile:
 	return out
 
 
+## How much this persona leans to defending, attacking and supporting (x, y, z, each 0 to 1), from its mix:
+## holding leans to defence, hunting and scouting to attack, supporting to support.
+func role_bias() -> Vector3:
+	var total := 0.0
+	for b in BEHAVIOURS:
+		total += maxf(0.0, float(mix.get(b, 0.0)))
+	if total <= 0.0:
+		return Vector3.ZERO
+	var hold := maxf(0.0, float(mix.get(HOLD, 0.0)))
+	var attack := maxf(0.0, float(mix.get(HUNT, 0.0))) + maxf(0.0, float(mix.get(SCOUT, 0.0)))
+	var support := maxf(0.0, float(mix.get(SUPPORT, 0.0)))
+	return (Vector3(hold, attack, support) / total).clamp(Vector3.ZERO, Vector3.ONE)
+
+
 func describe() -> Dictionary:
 	return {"id": String(id), "weight": weight, "difficulty": difficulty, "mix": mix.duplicate(), "skill": skill.duplicate()}

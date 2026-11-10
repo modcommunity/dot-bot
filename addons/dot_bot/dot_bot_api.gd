@@ -35,5 +35,6 @@ extends RefCounted
 # 16: DotBotThinkTier.engaged_far_every, engaged_range, load_scale (fighting bots out of sight thin out; the tiers stretch under load).
 # 17: DotBotBrain.target_first (a bot that sees its target tests it before scanning every body; same choice, a switch for comparing).
 # 18: DotBotWorld.contact_of (the contact for an id out of this tick's list; a world that indexes its contacts overrides it, the brain asks it instead of walking the list).
-const LEVEL := 18
+# 19: DotBotObjective, DotBotGoal, DotBotWorld.objective, DotBotBrain.goal, DotBotPersona.role_bias; profile rows role_defend, role_attack, role_support, objective_focus, defend_radius (team jobs in a flag mode).
+const LEVEL := 19
 const OLDEST := 1

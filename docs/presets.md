@@ -17,14 +17,14 @@ Two measurements hold the presets, and both run on every change.
 
 | Preset | Reaction (setting) | First-shot error | Error after 2.5 s | Fastest turn |
 | --- | --- | --- | --- | --- |
-| easy | 0.566 s (0.5) | 2.44 deg | 1.14 deg | 199 of 200 deg/s |
-| medium | 0.334 s (0.3) | 1.60 deg | 0.43 deg | 448 of 450 deg/s |
-| hard | 0.245 s (0.21) | 1.82 deg | 0.25 deg | 598 of 600 deg/s |
-| nightmare | 0.186 s (0.12) | 1.60 deg | 0.12 deg | 996 of 1000 deg/s |
+| easy | 0.666 s (0.5) | 2.76 deg | 1.27 deg | 179 of 180 deg/s |
+| medium | 0.368 s (0.3) | 2.03 deg | 0.49 deg | 358 of 360 deg/s |
+| hard | 0.280 s (0.21) | 1.87 deg | 0.28 deg | 478 of 480 deg/s |
+| nightmare | 0.228 s (0.12) | 1.48 deg | 0.13 deg | 797 of 800 deg/s |
 
-Reaction runs a little over the setting because of `bot_notice` and the tick. Hard's first shot is further off than medium's because it fires sooner, while the error is still settling, which is what a fast player does.
+Reaction runs over the setting because of `bot_notice`, the tick and the turn: the view swings at a person's pace, so a target far off the view takes longer to come onto.
 
-Then 100 one-on-one duels per preset against a hand-scripted opponent in a world of rays (an ordinary player: reacts in 0.35 s, opens 4 degrees off and settles to 1.5, fires half-second bursts, strafes at 4 m/s; both bloom with sustained fire, five hits kill, either side may have its back turned at the start): easy 0 (no kills), medium 0.82, hard 5.67, nightmare 100 (no deaths). A duel is decided by small advantages, so the spread is wide.
+Then 100 one-on-one duels per preset against a hand-scripted opponent in a world of rays (an ordinary player: reacts in 0.35 s, opens 4 degrees off and settles to 1.5, fires half-second bursts, strafes at 4 m/s; both bloom with sustained fire, five hits kill, either side may have its back turned at the start): easy 0.05, medium 0.33, hard 2.85, nightmare 10.11. A duel is decided by small advantages, so the spread is wide.
 
 **game-arena's `headless_bots`** plays each preset for 300 s of one-on-one on dm_box against a reference player whose settings are pinned in the suite (an ordinary player), with arena's real weapons, movement and trace: K/D easy 0.45, medium 1.20, hard 1.72, nightmare 2.75, never a shot without line of sight, never a turn above `bot_turn_rate`. A real map compresses the spread: spawns, corners and who sees whom first decide a lot of fights.
 

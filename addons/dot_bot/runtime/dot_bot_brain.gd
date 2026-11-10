@@ -101,6 +101,8 @@ var _chase_lost: bool = false
 var _grenade_ready: bool = false
 ## Fetching a better weapon from the floor; see [DotBotPickup].
 var pickup := DotBotPickup.new()
+## The job in a flag mode, planned from [member DotBotWorld.objective]; idle without one.
+var goal: DotBotGoal = null
 ## The cloned policy, or null; it drives this bot only when [method DotBotPolicy.active] says so (`bot_policy` above 0, a passing gate for the map).
 var policy: DotBotPolicy = null
 
@@ -147,6 +149,7 @@ func _init(p_id: int = 0, p_settings: DotBotSettings = null) -> void:
 	aim = DotBotAim.new(p_id, settings)
 	_rng = DotRandomStream.new(p_id).stream(&"dot_bot")
 	_unstick = DotBotUnstick.new(_rng)
+	goal = DotBotGoal.new(p_id)
 
 
 ## What this bot does this tick.
@@ -177,6 +180,7 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		_heard_at = -INF
 		_hurt_at = -INF
 		_hurt_pending_at = INF
+		goal.reset()
 
 	aim.view_from(me.view_yaw, me.view_pitch)
 
@@ -193,6 +197,10 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 	var seen := _perceive(me, all, world, p, now)
 	if world != null:
 		_hear(me, all, world, p, now)
+		if world.objective != null and goal.due(now):
+			goal.plan(me, world.objective, world, p, _rng, now)
+	# A carrier runs home and a defender keeps to its post rather than chase what it lost.
+	var tethered := goal.urgent or goal.strays(me.position)
 
 	_scene = &"roam"
 	_scene_up = 0.0
@@ -200,9 +208,9 @@ func think(me: DotBotContact, world: DotBotWorld, now: float) -> DotBotIntent:
 		pickup.cancel()
 	if seen != null:
 		_fight(me, seen, world, p, now, dt, out)
-	elif _last_seen_pos != Vector3.INF and now - _last_seen_at <= _hold_time(p, _peeking or _chase_lost):
+	elif not tethered and _last_seen_pos != Vector3.INF and now - _last_seen_at <= _hold_time(p, _peeking or _chase_lost):
 		_search(me, p, now, dt, out)
-	elif maxf(_heard_at, _hurt_at) > -INF and now - maxf(_heard_at, _hurt_at) <= _hold_time(p, _chase_sound or _hurt_at >= _heard_at):
+	elif not tethered and maxf(_heard_at, _hurt_at) > -INF and now - maxf(_heard_at, _hurt_at) <= _hold_time(p, _chase_sound or _hurt_at >= _heard_at):
 		_listen(me, world, p, now, dt, out)
 	else:
 		_roam(me, world, p, now, dt, out)
@@ -526,6 +534,11 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 	if not out.crouch and dist < p.burst_range and dt > 0.0 and _rng.next_unit() < p.jump * dt:
 		out.jump = true
 
+	if goal.urgent and goal.dest != Vector3.INF:
+		# A flag carrier shoots on the move and keeps running home.
+		out.crouch = false
+		_set_move(out, _toward(me, world, goal.dest) + Vector2(-dir.y, dir.x) * side * 0.35)
+		return
 	_set_move(out, dir * forward + Vector2(-dir.y, dir.x) * side)
 
 
@@ -580,7 +593,15 @@ func _listen(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float
 func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
 	out.state = &"roam"
 	var here := Vector2(me.position.x, me.position.z)
-	if _fetch(me, world, p, now, dt, out):
+	if not goal.urgent and _fetch(me, world, p, now, dt, out):
+		return
+
+	if goal.dest != Vector3.INF:
+		out.state = goal.kind
+		if goal.arrived(me.position) and not goal.urgent:
+			_hold(me, p, now, dt, out)
+			return
+		_walk(me, world, p, goal.dest, now, dt, out)
 		return
 
 	if _waypoint == Vector3.INF or here.distance_to(Vector2(_waypoint.x, _waypoint.z)) < 2.0:
@@ -590,8 +611,12 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 		# Nowhere to go: look about.
 		aim.turn_to(Vector2(aim.yaw + 40.0 * dt, 0.0), dt)
 		return
+	_walk(me, world, p, _waypoint, now, dt, out)
 
-	var dir := _toward(me, world, _waypoint)
+
+## Walks toward [param dest], looking where it goes.
+func _walk(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, dest: Vector3, now: float, dt: float, out: DotBotIntent) -> void:
+	var dir := _toward(me, world, dest)
 	# Looking where it walks, with the glance to either side a person checking corners has.
 	var look := DotBotAim.angles_to(me.eye(), me.eye() + Vector3(dir.x, 0.0, dir.y))
 	look.x += 25.0 * sin(now * 0.8 + float(id % 97))
@@ -606,6 +631,17 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 			look.x += _glance_off
 	aim.turn_to(look, dt)
 	_set_move(out, dir)
+
+
+## At its post: stands, watching the way an enemy would come, glancing to either side.
+func _hold(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
+	var look := Vector2(aim.yaw + 30.0 * dt, 0.0)
+	if goal.face != Vector3.INF:
+		look = DotBotAim.angles_to(me.eye(), Vector3(goal.face.x, me.eye().y, goal.face.z))
+		look.y = 0.0
+		look.x += 50.0 * sin(now * 0.5 + float(id % 89)) * (0.3 + p.glance)
+	aim.turn_to(look, dt)
+	_set_move(out, Vector2.ZERO)
 
 
 ## True when a weapon on the floor has this tick: walk to it, look at it, press use near it.
@@ -759,6 +795,8 @@ func describe() -> Dictionary:
 		"visible": _visible,
 		"yaw": snappedf(aim.yaw, 0.1),
 		"aim_error_deg": snappedf(aim.error_deg(_now if not is_nan(_now) else 0.0), 0.01),
+		"role": goal.role,
+		"goal": goal.kind,
 	}
 
 
