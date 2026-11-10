@@ -247,6 +247,15 @@ func emit_sound(position: Vector3, loudness: float, source: int, now: float) -> 
 func sounds_after(after_seq: int, now: float) -> Array[Dictionary]:
 	_prune(now)
 	var out: Array[Dictionary] = []
+	var n := sounds.size()
+	if n == 0:
+		return out
+	# emit_sound numbers them one by one, so the new ones are the tail and counting finds it;
+	# a list somebody wrote by hand is walked whole.
+	if int(sounds[n - 1]["seq"]) == _seq and int(sounds[0]["seq"]) == _seq - n + 1:
+		for i in range(maxi(0, n - (_seq - after_seq)), n):
+			out.append(sounds[i])
+		return out
 	for s in sounds:
 		if int(s["seq"]) > after_seq:
 			out.append(s)
@@ -261,6 +270,12 @@ func last_sound() -> int:
 func _prune(now: float) -> void:
 	while not sounds.is_empty() and now - float(sounds[0]["at"]) > SOUND_LIFETIME:
 		sounds.pop_front()
+
+
+## The contact with [param id] among [param all], this think's [method contacts]. A world that
+## keeps them by id overrides this; the brain asks it for every sound heard and every think of a fight.
+func contact_of(all: Array, id: int) -> DotBotContact:
+	return find(all, id)
 
 
 ## The contact with [param id] in [param list], or null.

@@ -34,5 +34,6 @@ extends RefCounted
 # 15: DotBotWorld.contacts_version, native_enabled, native_available, senses (the sight scan in dot-sim when loaded).
 # 16: DotBotThinkTier.engaged_far_every, engaged_range, load_scale (fighting bots out of sight thin out; the tiers stretch under load).
 # 17: DotBotBrain.target_first (a bot that sees its target tests it before scanning every body; same choice, a switch for comparing).
-const LEVEL := 17
+# 18: DotBotWorld.contact_of (the contact for an id out of this tick's list; a world that indexes its contacts overrides it, the brain asks it instead of walking the list).
+const LEVEL := 18
 const OLDEST := 1

@@ -296,7 +296,7 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	# A bot that still sees its target keeps it whoever else is in view, so the target alone is
 	# tested first and the scan over every body runs only when that fails (most thinks of a fight).
 	if target_first and _visible:
-		var held := DotBotWorld.find(all, target_id)
+		var held := world.contact_of(all, target_id) if world != null else DotBotWorld.find(all, target_id)
 		if held != null and held.alive:
 			_one[0] = held
 			if not _candidates(me, _one, p, eye, forward, half, scores).is_empty() and (through or _sees(world, eye, held, now)):
@@ -402,10 +402,19 @@ func _candidates_native(senses: Object, world: DotBotWorld, me: DotBotContact, p
 func _sees(world: DotBotWorld, eye: Vector3, c: DotBotContact, now: float) -> bool:
 	var stamp := world.sight_stamp()
 	var held: Variant = _sight_cache.get(c.id)
-	if held is Array and (held as Array)[2] == stamp and now >= (held as Array)[0] and now - (held as Array)[0] < SIGHT_REUSE:
-		return (held as Array)[1]
+	if not (held is Array):
+		var first := world.line_of_sight(eye, c.aim_point()) or world.line_of_sight(eye, c.eye())
+		_sight_cache[c.id] = [now, first, stamp]
+		return first
+	var row := held as Array
+	var at: float = row[0]
+	if row[2] == stamp and now >= at and now - at < SIGHT_REUSE:
+		return row[1]
 	var seen := world.line_of_sight(eye, c.aim_point()) or world.line_of_sight(eye, c.eye())
-	_sight_cache[c.id] = [now, seen, stamp]
+	# The row is this brain's own: written in place, a sight test allocates nothing after the first.
+	row[0] = now
+	row[1] = seen
+	row[2] = stamp
 	return seen
 
 
@@ -429,22 +438,27 @@ func _forget_target() -> void:
 # --- Hearing --------------------------------------------------------------------
 
 func _hear(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, now: float) -> void:
-	if world.last_sound() == _heard_seq:
+	var newest := world.last_sound()
+	if newest == _heard_seq:
 		return
 	var heard := world.sounds_after(_heard_seq, now)
-	_heard_seq = world.last_sound()
+	_heard_seq = newest
+	var my_id := me.id
+	var here := me.position
+	var reach := p.hearing
 	for s in heard:
 		var source := int(s.get("source", 0))
-		if source == me.id:
-			continue
-		var who := DotBotWorld.find(all, source)
-		if who != null and not me.is_enemy(who):
+		if source == my_id:
 			continue
 		var at: Vector3 = s.get("position", Vector3.INF)
 		if at == Vector3.INF:
 			continue
-		var d := me.position.distance_to(at)
-		if d > p.hearing * float(s.get("loudness", 1.0)):
+		var d := here.distance_to(at)
+		if d > reach * float(s.get("loudness", 1.0)):
+			continue
+		# Asked last: most sounds are out of earshot, and whose they are is the dear question.
+		var who := world.contact_of(all, source)
+		if who != null and not me.is_enemy(who):
 			continue
 		# A sound says roughly where, never exactly: the further, the vaguer.
 		var spread := d * 0.08
