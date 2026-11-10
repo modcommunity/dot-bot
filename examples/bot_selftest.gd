@@ -3,14 +3,14 @@ extends "res://examples/selftest/policy_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 575
+const CHECKS := 578
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 52
+const SECTIONS := 53
 
 
 func _ready() -> void:
@@ -34,6 +34,7 @@ func _run() -> void:
 	_test_aim()
 	_test_fire_mode()
 	_test_senses()
+	_test_target_first()
 	_test_turning()
 	_test_reaction_and_aim()
 	_test_duels()
@@ -845,6 +846,79 @@ func _test_senses() -> void:
 	_check((intents.back() as DotBotIntent).state == &"listen" and absf(wrapf((intents.back() as DotBotIntent).yaw - 180.0, -180.0, 180.0)) < 10.0,
 		"being shot from behind turns it toward the shooter without seeing them")
 	_done()
+
+
+## The same crowd thought through with and without [member DotBotBrain.target_first].
+func _test_target_first() -> void:
+	_section("target first: testing the held target alone changes no intent")
+	var fast := _crowd_intents(true)
+	var full := _crowd_intents(false)
+	DotBotBrain.target_first = true
+	var differs := -1
+	for i in range(mini(fast.size(), full.size())):
+		if fast[i] != full[i]:
+			differs = i
+			break
+	_check(fast.size() == full.size() and differs < 0, "six bots among eight bodies press the same with and without it, every think",
+		"first difference at think %d of %d" % [differs, fast.size()])
+	var fights := 0
+	var targets := {}
+	for row: Array in fast:
+		if row[13] == &"fight":
+			fights += 1
+		targets[row[12]] = true
+	_check(fights > fast.size() / 4, "and they fought for much of it", "%d of %d thinks" % [fights, fast.size()])
+	_check(targets.size() >= 4, "against several targets, lost and found again", "%d targets" % targets.size())
+	_done()
+
+
+## Every intent of six bots over 20 s among eight bodies that circle a wall, die, come back and fire; smoke for a while.
+func _crowd_intents(target_first: bool) -> Array:
+	DotBotBrain.target_first = target_first
+	const PRESETS: Array[String] = ["easy", "medium", "hard", "nightmare", "hard", "medium"]
+	var bodies: Array = []
+	for i in range(8):
+		bodies.append(DotBotContact.make(i + 1, Vector3.ZERO, 0 if i >= 6 else 1 + i % 2))
+	var world := DotBotWorld.new()
+	world.contacts_fn = func() -> Array: return bodies
+	# A wall on x = 0 for |z| < 4: sight across it there is refused.
+	world.line_of_sight_fn = func(a: Vector3, b: Vector3) -> bool:
+		if (a.x < 0.0) == (b.x < 0.0):
+			return true
+		return absf(lerpf(a.z, b.z, a.x / (a.x - b.x))) >= 4.0
+	var brains: Array[DotBotBrain] = []
+	for i in range(PRESETS.size()):
+		var s := DotBotSettings.new()
+		s.set_difficulty(PRESETS[i])
+		brains.append(DotBotBrain.new(i + 1, s))
+	var out: Array = []
+	var smoked := false
+	for tick in range(int(20.0 / TICK)):
+		var t := tick * TICK
+		for i in range(bodies.size()):
+			var c: DotBotContact = bodies[i]
+			var w := 0.25 + 0.07 * i
+			var r := 5.0 + 1.5 * i
+			var phase := t * w + i * 0.9
+			c.position = Vector3(cos(phase) * r, 0.0, sin(phase) * r)
+			c.velocity = Vector3(-sin(phase) * r * w, 0.0, cos(phase) * r * w)
+			c.alive = fmod(t + i * 1.7, 9.0) > 1.2
+		if not smoked and t >= 6.0:
+			smoked = true
+			var _id := world.add_sight_blocker(Vector3(4.0, 1.0, 0.0), 3.0, 10.0)
+		for i in range(brains.size()):
+			var me: DotBotContact = bodies[i]
+			# Bot 6 thinks every third tick, as a staggered one does.
+			if i == 5 and tick % 3 != 0:
+				continue
+			var intent := brains[i].think(me, world, t)
+			me.view_yaw = intent.yaw
+			me.view_pitch = intent.pitch
+			if intent.fire:
+				world.emit_sound(me.position, 1.0, me.id, t)
+			out.append([me.id, intent.yaw, intent.pitch, intent.move, intent.fire, intent.crouch, intent.jump, intent.walk,
+				intent.air_jump, intent.throw, intent.use, intent.ride, intent.target_id, intent.state])
+	return out
 
 
 func _test_turning() -> void:

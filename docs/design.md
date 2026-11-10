@@ -29,7 +29,9 @@ Everything is in `DotBotWorld`: the bodies, a line-of-sight answer, places to wa
 
 ## The states
 
-Each tick the brain perceives first, then does one of:
+Each tick the brain perceives first, then does one of the states below. Perceiving while a target is in sight tests that target alone (range, cone, line of sight) and scans every body only when it fails: a seen target is kept whoever else is in view, so the choice is the same and most thinks of a fight skip the scan. `DotBotBrain.target_first = false` scans always; the self-test plays a crowd both ways and compares every intent.
+
+The states:
 
 - **fight**: a target is in sight. Aim, fire when the view is on the aim and the reaction time has passed, keep `bot_range`, strafe, burst at range, maybe stand still or crouch for a long burst, maybe jump up close, back out when badly hurt (`bot_cover`).
 - **search**: the target went out of sight within `bot_memory`. Pre-aim where it went and shuffle in and out of the corner (`bot_peek`), or walk after it (`bot_aggression`), or hold and look; maybe throw at it (`bot_grenades`).

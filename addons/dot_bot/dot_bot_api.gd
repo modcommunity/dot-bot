@@ -33,5 +33,6 @@ extends RefCounted
 # 14: DotBotThinkTier (think-rate tiers: which bots think every tick and which every few, for a crowd).
 # 15: DotBotWorld.contacts_version, native_enabled, native_available, senses (the sight scan in dot-sim when loaded).
 # 16: DotBotThinkTier.engaged_far_every, engaged_range, load_scale (fighting bots out of sight thin out; the tiers stretch under load).
-const LEVEL := 16
+# 17: DotBotBrain.target_first (a bot that sees its target tests it before scanning every body; same choice, a switch for comparing).
+const LEVEL := 17
 const OLDEST := 1

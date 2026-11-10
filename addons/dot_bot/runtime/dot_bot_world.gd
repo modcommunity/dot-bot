@@ -174,6 +174,8 @@ func remove_sight_blocker(id: int) -> void:
 
 ## Drops the blockers that ended by [param now]; the brain calls it each think.
 func prune_sight_blockers(now: float) -> void:
+	if sight_blockers.is_empty():
+		return
 	for id in sight_blockers.keys():
 		if now >= float(sight_blockers[id]["until"]):
 			sight_blockers.erase(id)

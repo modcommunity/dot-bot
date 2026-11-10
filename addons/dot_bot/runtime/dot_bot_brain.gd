@@ -57,6 +57,11 @@ const GLANCE := 1.2
 ## mind about a doorway in 40 ms either.
 const SIGHT_REUSE := 0.045
 
+## Whether a bot that sees its target tests that body alone before scanning every body (the same
+## choice either way); a suite turns it off to compare.
+static var target_first: bool = true
+var _one: Array = [null]
+
 ## Longest gap between thinks that is integrated as one step, seconds.
 const MAX_STEP := 0.25
 
@@ -288,16 +293,27 @@ func _perceive(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfi
 	# Candidates inside range and cone come first; the sight test is the dear part, so it is
 	# asked of the current target and then of the best score only until one is seen.
 	var scores := PackedFloat32Array()
-	var senses := world.senses(all) if world != null else null
-	var cand := _candidates_native(senses, world, me, p, eye, forward, half, scores) if senses != null else _candidates(me, all, p, eye, forward, half, scores)
-
-	if _visible:
-		for i in cand.size():
-			if cand[i].id == target_id:
-				if through or _sees(world, eye, cand[i], now):
-					current = cand[i]
-				scores[i] = INF
-				break
+	# A bot that still sees its target keeps it whoever else is in view, so the target alone is
+	# tested first and the scan over every body runs only when that fails (most thinks of a fight).
+	if target_first and _visible:
+		var held := DotBotWorld.find(all, target_id)
+		if held != null and held.alive:
+			_one[0] = held
+			if not _candidates(me, _one, p, eye, forward, half, scores).is_empty() and (through or _sees(world, eye, held, now)):
+				current = held
+			_one[0] = null
+			scores.clear()
+	var cand: Array[DotBotContact] = []
+	if current == null:
+		var senses := world.senses(all) if world != null else null
+		cand = _candidates_native(senses, world, me, p, eye, forward, half, scores) if senses != null else _candidates(me, all, p, eye, forward, half, scores)
+		if _visible:
+			for i in cand.size():
+				if cand[i].id == target_id:
+					if through or _sees(world, eye, cand[i], now):
+						current = cand[i]
+					scores[i] = INF
+					break
 	if current == null:
 		while true:
 			var bi := -1
@@ -413,6 +429,8 @@ func _forget_target() -> void:
 # --- Hearing --------------------------------------------------------------------
 
 func _hear(me: DotBotContact, all: Array, world: DotBotWorld, p: DotBotProfile, now: float) -> void:
+	if world.last_sound() == _heard_seq:
+		return
 	var heard := world.sounds_after(_heard_seq, now)
 	_heard_seq = world.last_sound()
 	for s in heard:
