@@ -48,6 +48,12 @@ const CLOSE_NOTICE := 2.0
 
 ## Health fraction under which a bot that rolled [member DotBotProfile.cover] backs out.
 const RETREAT_HEALTH := 0.35
+## Seconds a bot may fight within [constant STALE_MOVE] metres of one spot, against anybody, before it pushes in.
+const STALE_FIGHT := 8.0
+## How far a fighting bot has to get from where it stood for its fight to count as moving, metres.
+const STALE_MOVE := 3.0
+## How close a pushing bot walks in, metres.
+const STALE_CLOSE := 3.0
 
 ## Seconds a bot that is not going after a sound or a lost target spends looking toward it.
 const GLANCE := 1.2
@@ -123,6 +129,10 @@ var _strafe: float = 0.0
 var _strafe_until: float = -INF
 var _strafe_eased: float = 0.0
 var _hesitate_until: float = -INF
+# Where the bot has been fighting since when, for a standoff that never moves; reset by a pause in the fighting.
+var _fight_spot: Vector3 = Vector3.INF
+var _fight_since: float = -INF
+var _fight_last: float = -INF
 var _glance_next: float = 0.0
 var _glance_until: float = -INF
 var _glance_off: float = 0.0
@@ -499,6 +509,14 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 		forward = -0.7
 
 	var retreat := _roll_cover and me.health < RETREAT_HEALTH
+	if now - _fight_last > 2.0 or me.position.distance_to(_fight_spot) > STALE_MOVE:
+		_fight_spot = me.position
+		_fight_since = now
+	_fight_last = now
+	# A standoff nobody wins, one target or several: the bot walks in instead of trading misses from one spot.
+	var push := not retreat and dist > STALE_CLOSE and now - _fight_since > STALE_FIGHT
+	if push:
+		forward = 1.0
 	if retreat:
 		forward = -1.0
 	out.state = &"retreat" if retreat else &"fight"
@@ -525,7 +543,7 @@ func _fight(me: DotBotContact, c: DotBotContact, world: DotBotWorld, p: DotBotPr
 		side = 0.0
 
 	var long_burst := trigger and dist > p.burst_range * 0.6
-	if long_burst and _roll_stop and not retreat:
+	if long_burst and _roll_stop and not retreat and not push:
 		forward = 0.0
 		side = 0.0
 	out.crouch = trigger and _roll_crouch and dist > p.burst_range and not retreat

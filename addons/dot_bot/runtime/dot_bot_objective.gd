@@ -1,8 +1,8 @@
 class_name DotBotObjective
 extends RefCounted
 
-## What every bot may know about the flags, and which job each bot has: the shared half of a
-## team mode's bot plan. [DotBotGoal] is the per-bot half that reads it.
+## What every bot may know about the flags (or a hill to hold), and which job each bot has: the
+## shared half of a team mode's bot plan. [DotBotGoal] is the per-bot half that reads it.
 ##
 ## [b]Written by the game, read by brains.[/b] The game calls [method set_flag] for each team's
 ## flag once per tick on the main thread and [method assign] when a bot joins or changes team;
@@ -45,6 +45,11 @@ var _carrier := PackedInt64Array()
 var _roles: Dictionary = {}
 var _teams: Dictionary = {}
 
+## A point a team holds to score (a hill), INF for none; its radius and the team holding it (0 none).
+var point: Vector3 = Vector3.INF
+var point_radius: float = 0.0
+var point_owner: int = 0
+
 
 ## Team [param team]'s flag: its [param home], where it is now ([param at]), who carries it
 ## (-1 for nobody), its [param state] ([constant HOME], [constant CARRIED], [constant DROPPED]),
@@ -69,9 +74,23 @@ func set_flag(team: int, home: Vector3, at: Vector3, carrier: int, state: int, c
 	active = true
 
 
-## Forgets every flag (a map change or a mode without flags); roles stay.
+## A hill at [param at] within [param radius], held by [param p_owner] (0 for nobody). Once per
+## tick on the main thread, like [method set_flag]; a mode has flags or a hill, not both.
+func set_point(at: Vector3, radius: float, p_owner: int) -> void:
+	point = at
+	point_radius = maxf(radius, 1.0)
+	point_owner = p_owner
+	active = true
+
+
+func has_point() -> bool:
+	return point != Vector3.INF
+
+
+## Forgets every flag and the hill (a map change or a mode without either); roles stay.
 func clear_flags() -> void:
 	_known.fill(0)
+	point = Vector3.INF
 	active = false
 
 

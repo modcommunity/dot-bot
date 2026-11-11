@@ -261,7 +261,27 @@ func _test_humanisation() -> void:
 	_human_glance()
 	_human_hesitate()
 	_human_hurt_delay()
+	_stale_standoff()
 	_done()
+
+
+func _stale_standoff() -> void:
+	# A fight at the bot's own range holds its ground at first, then walks in once it has stood there too long.
+	var sc := _scene(Vector3(0.0, 0.0, -10.0))
+	var s := _human_settings(false, {"strafe": 0.0, "stop_to_shoot": 0.0, "crouch": 0.0, "cover": 0.0})
+	var brain := DotBotBrain.new(5100, s)
+	var intents := _run_bot(brain, sc[0], sc[2], 12.0)
+	var early := 0.0
+	var late := INF
+	for i in intents.size():
+		var t := float(i) * TICK
+		var y := (intents[i] as DotBotIntent).move.y
+		if t > 2.0 and t < DotBotBrain.STALE_FIGHT - 1.0:
+			early = maxf(early, absf(y))
+		elif t > DotBotBrain.STALE_FIGHT + 1.0:
+			late = minf(late, y)
+	print("       standoff at 10 m: forward early %.2f, late %.2f" % [early, late])
+	_check(early < 0.2 and late > 0.8, "a standoff at range holds, then pushes in after STALE_FIGHT", "early %.2f late %.2f" % [early, late])
 
 
 func _human_reaction() -> void:
@@ -348,7 +368,8 @@ func _human_strafe() -> void:
 			(sc[0] as DotBotContact).view_yaw = intent.yaw
 			(sc[0] as DotBotContact).view_pitch = intent.pitch
 			if t > 2.0:
-				var x := intent.move.x
+				# Once the standoff has gone stale the bot walks in at full forward and the diagonal is shortened to length 1; undo that to get the strafe back.
+				var x := intent.move.x / intent.move.y if intent.move.y > 0.5 else intent.move.x
 				if absf(x) > 0.1 and absf(x) < 0.9:
 					mid += 1
 				var sg := 0 if absf(x) < 0.3 else (1 if x > 0.0 else -1)

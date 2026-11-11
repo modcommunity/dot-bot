@@ -87,6 +87,26 @@ func _test_objective() -> void:
 	var back := _planned(dropped, _red(2, Vector3(5.0, 0.0, 0.0)), focused)
 	_check(back.kind == &"return" and back.dest == Vector3(20.0, 0.0, 0.0), "a defender returns its dropped flag", "%s %s" % [back.kind, back.dest])
 
+	# A hill instead of flags: the same roles, each at its own distance from it.
+	var hill_at := Vector3(30.0, 0.0, 0.0)
+	var hill := DotBotObjective.new()
+	hill.set_point(hill_at, 8.0, 2)
+	var thirds := even.copy()
+	thirds.role_support = 1.0
+	var _h1 := hill.assign(1, 1, thirds, Vector3(0.0, 1.0, 0.0))
+	var _h2 := hill.assign(2, 1, thirds, Vector3(1.0, 0.0, 0.0))
+	var _h3 := hill.assign(3, 1, thirds, Vector3(0.0, 0.0, 1.0))
+	var take := _planned(hill, _red(1, Vector3(0.0, 0.0, 0.0)), focused)
+	_check(take.kind == &"grab" and take.dest.distance_to(hill_at) <= 4.01, "an attacker takes a hill another team holds", "%s %s" % [take.kind, take.dest])
+	var sit := _planned(hill, _red(2, Vector3(0.0, 0.0, 0.0)), focused)
+	_check(sit.kind == &"defend" and sit.dest.distance_to(hill_at) <= 5.61 and sit.strays(Vector3(60.0, 0.0, 0.0)), "a defender holds on the hill, leashed to it", "%s %s" % [sit.kind, sit.dest])
+	var ring := _planned(hill, _red(3, Vector3(0.0, 0.0, 0.0)), focused)
+	_check(ring.kind == &"hold" and ring.face == hill_at, "a supporter holds near the hill facing it", "%s %s" % [ring.kind, ring.face])
+	hill.set_point(hill_at, 8.0, 1)
+	_check(_planned(hill, _red(1, Vector3(0.0, 0.0, 0.0)), focused).kind == &"", "an attacker hunts away from a hill its team holds")
+	hill.clear_flags()
+	_check(not hill.active and not hill.has_point(), "clear_flags forgets the hill too")
+
 	var spells := {}
 	var focuses: Array[float] = [0.0, 1.0]
 	for focus in focuses:

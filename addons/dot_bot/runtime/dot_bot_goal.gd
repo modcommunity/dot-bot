@@ -1,8 +1,8 @@
 class_name DotBotGoal
 extends RefCounted
 
-## One bot's current job in a flag mode: where to go and how much else may distract it, re-planned
-## every [constant REPLAN] seconds from the [DotBotObjective] the world holds.
+## One bot's current job in a flag or hill mode: where to go and how much else may distract it,
+## re-planned every [constant REPLAN] seconds from the [DotBotObjective] the world holds.
 ##
 ## [codeblock]
 ## carrying a flag      capture: run home, no pickups, fights on the move (urgent)
@@ -12,6 +12,8 @@ extends RefCounted
 ## support              escort a carrier, else hold the ground between the bases
 ## defend               patrol within bot_defend_radius of home, hold and watch the way in;
 ##                      does not chase a sound or a lost target beyond twice that
+## a hill instead       defend holds on it, attack takes it when another team has it (else
+##                      hunts), support holds a ring around it facing in
 ## [/codeblock]
 ##
 ## bot_objective_focus is how often the bot keeps to its job; the rest of the time it roams a
@@ -84,6 +86,9 @@ func plan(me: DotBotContact, objective: DotBotObjective, world: DotBotWorld, p: 
 		return
 	role = objective.role_of(me.id)
 	var team := me.team
+	if objective.has_point():
+		_plan_point(me, objective, world, p, rng, now)
+		return
 	var enemy := objective.enemy_of(team, me.position)
 	if objective.carrying(me.id) >= 0:
 		_aim_at(&"capture", objective.capture_for(team), true)
@@ -135,6 +140,39 @@ func plan(me: DotBotContact, objective: DotBotObjective, world: DotBotWorld, p: 
 			anchor = home
 			leash = 2.0 * p.defend_radius
 			face = objective.home_of(enemy) if enemy >= 0 else Vector3.INF
+
+
+## The hill: everybody near it, each role at its own distance.
+func _plan_point(me: DotBotContact, objective: DotBotObjective, world: DotBotWorld, p: DotBotProfile, rng: DotRandomStream, now: float) -> void:
+	urgent = false
+	if now < _free_until or role == DotBotObjective.ROAM:
+		_clear()
+		return
+	if rng.next_unit() < (1.0 - p.objective_focus) * 0.15:
+		_free_until = now + 4.0 + 4.0 * rng.next_unit()
+		_clear()
+		return
+	var hill := objective.point
+	var radius := objective.point_radius
+	match role:
+		DotBotObjective.DEFEND:
+			if kind != &"defend" or (arrived(me.position) and now >= _hold_until):
+				_aim_at(&"defend", _spot_near(world, hill, radius * 0.7, rng), false)
+				_hold_until = now + 2.0 + 4.0 * rng.next_unit()
+			anchor = hill
+			leash = maxf(2.0 * radius, p.defend_radius)
+		DotBotObjective.ATTACK:
+			if objective.point_owner == me.team:
+				# Ours: the attackers go out and meet the next push instead of standing on it.
+				_clear()
+			elif kind != &"grab" or (arrived(me.position) and now >= _hold_until):
+				_aim_at(&"grab", _spot_near(world, hill, radius * 0.5, rng), false)
+				_hold_until = now + 2.0 + 2.0 * rng.next_unit()
+		DotBotObjective.SUPPORT:
+			if kind != &"hold" or (arrived(me.position) and now >= _hold_until):
+				_aim_at(&"hold", _spot_near(world, hill, radius * 1.6, rng), false)
+				_hold_until = now + 3.0 + 4.0 * rng.next_unit()
+			face = hill
 
 
 func describe() -> Dictionary:
