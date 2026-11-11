@@ -25,7 +25,7 @@ extends RefCounted
 ## "train on the states the student reaches", with no training). game-dev/docs/surf-bots-study.md
 ## has the comparison with recorded demonstrations and with reinforcement learning.
 ##
-## Costs, measured on game-g2gfast's surf_beginner stage 1: a search is about 10 s and 96,000
+## Costs, measured on game-airdrift's surf_beginner stage 1: a search is about 10 s and 96,000
 ## motor ticks; a stage's cache (6 starts, 3 repair rounds of 48) 21 minutes on one core.
 
 # No log channel: [method build] reports through the caller's `say`.

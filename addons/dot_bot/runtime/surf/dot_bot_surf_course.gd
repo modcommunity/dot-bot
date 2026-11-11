@@ -6,9 +6,9 @@ extends RefCounted
 ## asks it what a simulated future ended in.
 ##
 ## [b]A game fills it, from what its map already says.[/b] A timer map's stage is its zones
-## (game-g2gfast: the stage's destination is the start, the next stage's zone the goal, every
+## (game-airdrift: the stage's destination is the start, the next stage's zone the goal, every
 ## respawn zone a pit); a combat surf map's ride is an edge from one standable platform to
-## another, with the map's teleports as pits (game-arena). Either sets [member goals] and
+## another, with the map's teleports as pits (game-fatal-contact). Either sets [member goals] and
 ## [member pits] as boxes, or overrides [method event_at], then calls [method settle].
 ##
 ## [b]Progress is distance along the line from the start to the goal, plus energy.[/b] On a
@@ -64,9 +64,9 @@ var guide: PackedVector3Array = PackedVector3Array()
 ## [b]Why.[/b] A combat surf map's spawn sits on top of a long ramp with nothing beside it but
 ## the drop to the floor teleport. A line that leaves the ramp toward the goal makes progress
 ## faster than one riding it, and keeps all of its energy until it lands in the pit seconds later;
-## by then the beam had dropped every rider for it and every line died at once (game-arena's
+## by then the beam had dropped every rider for it and every line died at once (game-fatal-contact's
 ## surf_10x_reloaded_fixed, 2026-10-13). A staged map's pits sit right under its ramps, so
-## game-g2gfast never needed it.
+## game-airdrift never needed it.
 var unsupported_fn: Callable = Callable()
 ## Progress as how much nearer the goal (flat) a state is than the start, rather than how far
 ## along the start-to-goal line: a line past the goal is not ahead of one at it. A staged

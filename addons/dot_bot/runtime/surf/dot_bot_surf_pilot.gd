@@ -25,8 +25,8 @@ extends RefCounted
 ## [b]Two more are anchored to the ride, not the velocity[/b] (index [constant ANCHORED_FROM] on):
 ## a wish square to the course's reference yaw, either side. A wish square to the velocity turns
 ## the velocity with it, so held for long it circles off a ramp; a surfer holds the face with a
-## wish that stays put while the velocity swings under it. On game-g2gfast's stage the beam made
-## that by alternating; down game-arena's combat surf ramps, whose first metres are nearly upright,
+## wish that stays put while the velocity swings under it. On game-airdrift's stage the beam made
+## that by alternating; down game-fatal-contact's combat surf ramps, whose first metres are nearly upright,
 ## it never did, and only a held world-fixed wish landed (2026-10-13). Appended, so a cache's
 ## action numbers keep their meaning.
 const ACTIONS: Array = [
@@ -63,7 +63,7 @@ const FORECAST_SLACK := 0.01
 const VETO_STEPS := 2000
 ## The fewest ticks between two fresh forecasts. A bot whose game turns its keys for its own view
 ## walks off the forecast on the ground every tick (a backward key is slower there), and a fresh
-## 192-tick forecast every tick was half a core (game-arena, 2026-10-13).
+## 192-tick forecast every tick was half a core (game-fatal-contact, 2026-10-13).
 const RESYNC_GAP := 16
 
 var entries: PackedFloat32Array = PackedFloat32Array()
@@ -184,7 +184,7 @@ func load_entries(rides: PackedFloat32Array, lengths: PackedInt32Array, yaw: flo
 	for i in range(size()):
 		var key := _cell(Vector3(entries[i * STRIDE], entries[i * STRIDE + 1], entries[i * STRIDE + 2]))
 		# Through the dictionary, never `(_grid[key] as PackedInt32Array).append(i)`: the cast
-		# hands back a copy and the append is lost, which left game-g2gfast's prototype with an
+		# hands back a copy and the append is lost, which left game-airdrift's prototype with an
 		# empty grid and a scan of every entry on every lookup (game-dev/docs/gdscript-hazards.md).
 		if not _grid.has(key):
 			_grid[key] = PackedInt32Array()
@@ -322,7 +322,7 @@ func nearest(state: Variant) -> int:
 					# at least the position part, and that is at least the distance to the cell's
 					# box. The answer is the one the full scan gives; on a ride line most
 					# of the 26 neighbours hold hundreds of entries and are this far away. It was
-					# most of a forecast's cost (game-g2gfast: 390 us a simulated tick, 90 of it
+					# most of a forecast's cost (game-airdrift: 390 us a simulated tick, 90 of it
 					# the motor).
 					if _box_distance_squared(key, position) >= _scan_d:
 						continue
@@ -331,7 +331,7 @@ func nearest(state: Variant) -> int:
 			return _scan_best
 	# Nothing within two cells: the state is off every ride (a veto's candidate gone wrong, a bot
 	# knocked away). A scan of every entry was a millisecond a call, and a veto asks for hundreds
-	# (game-arena, 2026-10-19: 4 to 12 ms a riding tick, nearly all of it this scan). A coarse grid,
+	# (game-fatal-contact, 2026-10-19: 4 to 12 ms a riding tick, nearly all of it this scan). A coarse grid,
 	# ring by ring outward, skipping a cell whose box is further than the best so far and stopping
 	# when the next ring cannot hold a nearer entry: the nearest entry. Past the last ring a sample.
 	var ccentre := _coarse_cell(position)

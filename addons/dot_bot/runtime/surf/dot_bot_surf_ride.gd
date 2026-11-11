@@ -154,7 +154,7 @@ func steer(state: Variant, intent: DotBotIntent, now_tick: int) -> int:
 		# Running to the ramp, and jumping, the view goes where the legs go: on the ground a key
 		# held backward is slower, and a jump beside a wall pushes off along the view (a wall
 		# jump), so either made for a view elsewhere is not the ride that was planned, and it
-		# fell (game-arena's surf_ski_2, whose wall moves are on).
+		# fell (game-fatal-contact's surf_ski_2, whose wall moves are on).
 		intent.yaw = DotBotSurfPilot.heading_of(state, pilot.reference_yaw)
 	intent.move = DotBotSurfPilot.move_toward(DotBotSurfPilot.wish_yaw(action, state, pilot.reference_yaw), intent.yaw)
 	intent.jump = DotBotSurfPilot.jumps(action)

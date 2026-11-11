@@ -26,15 +26,15 @@ Reaction runs over the setting because of `bot_notice`, the tick and the turn: t
 
 Then 100 one-on-one duels per preset against a hand-scripted opponent in a world of rays (an ordinary player: reacts in 0.35 s, opens 4 degrees off and settles to 1.5, fires half-second bursts, strafes at 4 m/s; both bloom with sustained fire, five hits kill, either side may have its back turned at the start): easy 0.05, medium 0.33, hard 2.85, nightmare 10.11. A duel is decided by small advantages, so the spread is wide.
 
-**game-arena's `headless_bots`** plays each preset for 300 s of one-on-one on dm_box against a reference player whose settings are pinned in the suite (an ordinary player), with arena's real weapons, movement and trace: K/D easy 0.45, medium 1.20, hard 1.72, nightmare 2.75, never a shot without line of sight, never a turn above `bot_turn_rate`. A real map compresses the spread: spawns, corners and who sees whom first decide a lot of fights.
+**game-fatal-contact's `headless_bots`** plays each preset for 300 s of one-on-one on dm_box against a reference player whose settings are pinned in the suite (an ordinary player), with arena's real weapons, movement and trace: K/D easy 0.45, medium 1.20, hard 1.72, nightmare 2.75, never a shot without line of sight, never a turn above `bot_turn_rate`. A real map compresses the spread: spawns, corners and who sees whom first decide a lot of fights.
 
-**game-arena's `headless_bottricks`** plays easy and nightmare for 240 s on dm_atrium and dm_pit against another bot with the air-jump on, and counts the real motor's slides, wall runs and launches: easy 22 slides, 0 wall runs, 0 launches and 743 ticks ducking (after the 2026-10-31 retune of crouch, slide, wall_run and cover_crouch for easy, medium and hard); nightmare 112, 10, 22 and 4095. With the air-jump off in the game, a nightmare bot never presses it. dot-bot's suite holds the same shape on a toy motor.
+**game-fatal-contact's `headless_bottricks`** plays easy and nightmare for 240 s on dm_atrium and dm_pit against another bot with the air-jump on, and counts the real motor's slides, wall runs and launches: easy 22 slides, 0 wall runs, 0 launches and 743 ticks ducking (after the 2026-10-31 retune of crouch, slide, wall_run and cover_crouch for easy, medium and hard); nightmare 112, 10, 22 and 4095. With the air-jump off in the game, a nightmare bot never presses it. dot-bot's suite holds the same shape on a toy motor.
 
-Neither reaches whether a bot *looks* human. game-arena's `tools/render_bots.sh [preset]` photographs one over its shoulder every 0.4 s and logs its state, target, line of sight and trigger.
+Neither reaches whether a bot *looks* human. game-fatal-contact's `tools/render_bots.sh [preset]` photographs one over its shoulder every 0.4 s and logs its state, target, line of sight and trigger.
 
 ## Changing a preset
 
-Change the column in `SPEC`; when it is medium's, change the `@export var` default too (the suite checks a new profile equals medium). Then run the suite, game-arena's `headless_bots` and the render, and update the measured numbers here and the band comments in both suites. A band that has to move is a decision, written in the commit.
+Change the column in `SPEC`; when it is medium's, change the `@export var` default too (the suite checks a new profile equals medium). Then run the suite, game-fatal-contact's `headless_bots` and the render, and update the measured numbers here and the band comments in both suites. A band that has to move is a decision, written in the commit.
 
 ## Adding a setting
 

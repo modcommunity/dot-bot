@@ -50,8 +50,8 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is sp
 ## Running and testing
 
 - Link `addons/dot_core` from its repo once ([development setup](../../docs/development-setup.md)), then the family's two steps ([family CLAUDE.md](../../CLAUDE.md#validating-anything)) and `timeout 180 godot --headless --path . res://examples/bot_selftest.tscn`.
-- **A change to the brain or a preset is not done until game-arena's `headless_bots` passes**: it plays every preset in the real game and holds each to a K/D band, no blind shot and no turn above `bot_turn_rate`. Then the other games that use it (game-zombie-zone, mg-prop-hunt). [presets](docs/presets.md#measured)
-- **Look at it.** No suite reaches whether a bot looks human: game-arena's `tools/render_bots.sh [preset]` photographs one from over its shoulder and logs what it was doing. [presets](docs/presets.md#measured)
+- **A change to the brain or a preset is not done until game-fatal-contact's `headless_bots` passes**: it plays every preset in the real game and holds each to a K/D band, no blind shot and no turn above `bot_turn_rate`. Then the other games that use it (game-zombie-zone, mg-prop-hunt). [presets](docs/presets.md#measured)
+- **Look at it.** No suite reaches whether a bot looks human: game-fatal-contact's `tools/render_bots.sh [preset]` photographs one from over its shoulder and logs what it was doing. [presets](docs/presets.md#measured)
 
 ## Rules that bite
 

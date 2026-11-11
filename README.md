@@ -178,7 +178,7 @@ godot --headless --path . --import
 timeout 180 godot --headless --path . res://examples/bot_selftest.tscn
 ```
 
-The suite checks the presets and cvars, and measures each preset's reaction time, first-shot aim error, settled aim, turn speed and kill/death ratio against one scripted opponent. game-arena's `headless_bots` measures the same in a real match.
+The suite checks the presets and cvars, and measures each preset's reaction time, first-shot aim error, settled aim, turn speed and kill/death ratio against one scripted opponent. game-fatal-contact's `headless_bots` measures the same in a real match.
 
 ## License
 [MIT](LICENSE)
