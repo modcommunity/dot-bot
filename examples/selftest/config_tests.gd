@@ -472,6 +472,22 @@ func _test_think_tier_near_person() -> void:
 			_check(fired and tiered[1] - every_tick[1] <= 2 * DotBotThinkTier.new().idle_view_every and tiered[2] > 0, "an idle bot a person sees at %d m thins out (%d skipped thinks) and fires within two periods of the every-tick bot (ticks %d and %d)" % [c[0], tiered[2], every_tick[1], tiered[1]])
 		else:
 			_check(fired and same and tiered[2] == 0, "a bot %d m from a person (nearest %d) thinks every tick: the same %d intents as without tiers, first shot on tick %d" % [c[0], c[1], every_tick[0].size(), tiered[1]])
+	# A thinned idle bot turns its look about per elapsed tick, not per think.
+	for rate in [40.0, 30.0]:
+		var yaws: Array = []
+		for every in [1, 2, 4]:
+			var b := DotBotBrain.new(3, DotBotSettings.new())
+			b.aim.yaw = 0.0
+			for tick in 64:
+				if tick % every == 0:
+					b._drift(rate, TICK * every)
+			yaws.append(b.aim.yaw)
+		_check(absf(yaws[1] - yaws[0]) < 1.5 and absf(yaws[2] - yaws[0]) < 3.0, "idle look-about at %d deg/s turns the same per second thinned to every 2 / 4 ticks (yaw %.1f / %.1f / %.1f)" % [rate, yaws[0], yaws[1], yaws[2]])
+	var a := DotBotAim.new(1, DotBotSettings.new())
+	a.view_from(30.0, NAN)
+	_check(a.yaw == 30.0 and a.pitch == 0.0, "view_from with a NaN pitch looks level, not NaN")
+	a.view_from(40.0, 12.0)
+	_check(a.yaw == 40.0 and a.pitch == 12.0, "view_from with a real pitch keeps it")
 	_done()
 
 

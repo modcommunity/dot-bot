@@ -627,7 +627,7 @@ func _roam(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, now: float, 
 
 	if _waypoint == Vector3.INF:
 		# Nowhere to go: look about.
-		aim.turn_to(Vector2(aim.yaw + 40.0 * dt, 0.0), dt)
+		_drift(40.0, dt)
 		return
 	_walk(me, world, p, _waypoint, now, dt, out)
 
@@ -651,9 +651,23 @@ func _walk(me: DotBotContact, world: DotBotWorld, p: DotBotProfile, dest: Vector
 	_set_move(out, dir)
 
 
+## Turns the view [param rate] deg/s on for [param dt] seconds. A thinned bot thinks every few ticks, and the
+## smoothing in [method DotBotAim.turn_to] is quadratic in dt, so a long dt runs as steps of at most 1/60 s:
+## the turn per elapsed second is the same however often the bot thinks (one step, as before, up to 1/60 s).
+func _drift(rate: float, dt: float) -> void:
+	var n := maxi(1, ceili(dt * 60.0 - 0.01))
+	var sub := dt / float(n)
+	for _i in n:
+		aim.turn_to(Vector2(aim.yaw + rate * sub, 0.0), sub)
+
+
 ## At its post: stands, watching the way an enemy would come, glancing to either side.
 func _hold(me: DotBotContact, p: DotBotProfile, now: float, dt: float, out: DotBotIntent) -> void:
-	var look := Vector2(aim.yaw + 30.0 * dt, 0.0)
+	var look := Vector2(aim.yaw, 0.0)
+	if goal.face == Vector3.INF:
+		_drift(30.0, dt)
+		_set_move(out, Vector2.ZERO)
+		return
 	if goal.face != Vector3.INF:
 		look = DotBotAim.angles_to(me.eye(), Vector3(goal.face.x, me.eye().y, goal.face.z))
 		look.y = 0.0

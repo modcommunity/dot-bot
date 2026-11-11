@@ -88,7 +88,8 @@ func _init(id: int = 0, p_settings: DotBotSettings = null) -> void:
 func view_from(p_yaw: float, p_pitch: float) -> void:
 	if not is_nan(p_yaw):
 		yaw = p_yaw
-		pitch = p_pitch
+		# A caller that sets only the yaw leaves the pitch NaN: look level rather than poison the forward.
+		pitch = 0.0 if is_nan(p_pitch) else p_pitch
 
 
 ## Commits to [param id] at [param point], seen from [param eye]. True when this starts a new
