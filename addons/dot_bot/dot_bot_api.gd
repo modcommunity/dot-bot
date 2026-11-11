@@ -37,5 +37,6 @@ extends RefCounted
 # 18: DotBotWorld.contact_of (the contact for an id out of this tick's list; a world that indexes its contacts overrides it, the brain asks it instead of walking the list).
 # 19: DotBotObjective, DotBotGoal, DotBotWorld.objective, DotBotBrain.goal, DotBotPersona.role_bias; profile rows role_defend, role_attack, role_support, objective_focus, defend_radius (team jobs in a flag mode); DotBotObjective.set_point (the same jobs around a hill).
 # 20: DotBotPersona.scale, spread, derive_into, shapes_skill; DotBotSettings.derived, sync; DotBotPersonaPool.deal, given; DotBotProfile.set_number, copy_from (each bot its own persona).
-const LEVEL := 20
+# 21: DotBotThinkTier.idle_view_every and period(..., idle) (an idle bot a person only sees thins out; idle defaults false, so callers that do not pass it are unchanged).
+const LEVEL := 21
 const OLDEST := 1

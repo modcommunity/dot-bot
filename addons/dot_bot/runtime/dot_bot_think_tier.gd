@@ -7,6 +7,10 @@ extends RefCounted
 ## The rest (bots fighting bots out of sight, bots roaming) think every [member near_every] ticks within
 ## [member far_range] of a person and every [member far_every] beyond, up to the beat [method until_beat] gives, so the
 ## thinkers spread over the ticks. Plain data in, a period out: the game's loop and a native brain share it.
+##
+## What a thinned bot skips is its brain, never its body: the game moves it every tick on the commands of its last think
+## (held buttons, the view carried towards where it last looked), so its walk, its hitboxes and lag compensation are the
+## same at any period. A bot a person was just hurt by, or that turns on a person, is full rate on its next think.
 
 ## Players above which tiers apply; at or below it every bot thinks every tick. Negative: never.
 var above: int = 16
@@ -24,6 +28,11 @@ var nearest: int = 3
 var engaged_far_every: int = 1
 ## Metres: a fighting bot nearer than this to a person is full rate whatever the person faces.
 var engaged_range: float = 25.0
+## Period of an idle bot (the game's word: it has no target, or it is dead) that is in a person's view cone but is
+## neither within [member close_range] nor among the [member nearest]: in sight it shows only its walk, which the game
+## carries between thinks, and the tick it picks a target it is no longer idle. Not stretched by [member load_scale].
+## 1: a seen bot is full rate whatever it does (the tiers before API 21).
+var idle_view_every: int = 2
 ## Multiplies every period above 1 (the tiers under load): a game that measures its tick running over its budget raises
 ## it, 1 is the periods as set. Full-rate bots stay full rate, and no period passes [constant MAX_PERIOD].
 var load_scale: float = 1.0
@@ -42,7 +51,8 @@ var _eyes := PackedVector3Array()
 var _looks := PackedVector3Array()
 var _pinned: Dictionary = {}
 var _on: bool = false
-## Answers of [method period] since the tier was made, by reason, for a profile: off, engaged, pinned, close, view, near, far.
+## Answers of [method period] since the tier was made, by reason, for a profile: off, engaged, pinned, close, view,
+## idle_view, engaged_far, near, far.
 var counts: Dictionary = {}
 
 
@@ -86,8 +96,9 @@ func is_on() -> bool:
 
 
 ## Ticks between thinks for bot [param id] at [param position] (1 = every tick). [param engaged] is the game's
-## word that it fights a person or was just hurt by one.
-func period(id: int, position: Vector3, engaged: bool) -> int:
+## word that it fights a person or was just hurt by one; [param idle] that it has no target at all, or is dead (a bot
+## fighting another bot is neither). Engaged wins over idle.
+func period(id: int, position: Vector3, engaged: bool, idle: bool = false) -> int:
 	if not _on:
 		return _count(&"off", 1)
 	if engaged and engaged_far_every <= 1:
@@ -99,6 +110,7 @@ func period(id: int, position: Vector3, engaged: bool) -> int:
 	var view_sq := view_range * view_range
 	var reach := maxf(engaged_range, close_range)
 	var engaged_sq := reach * reach
+	var seen := false
 	for e in _eyes.size():
 		var to := position - _eyes[e]
 		var d_sq := to.length_squared()
@@ -107,13 +119,17 @@ func period(id: int, position: Vector3, engaged: bool) -> int:
 		if engaged and d_sq < engaged_sq:
 			return _count(&"engaged", 1)
 		if d_sq < view_sq and to.dot(_looks[e]) >= _view_cos * sqrt(d_sq):
-			return _count(&"view", 1)
+			if engaged or not idle or idle_view_every <= 1:
+				return _count(&"view", 1)
+			seen = true
 		best = minf(best, d_sq)
+	var unseen := _scaled(near_every) if best < far_range * far_range else _scaled(far_every)
+	if seen:
+		# Never slower than the same bot out of sight.
+		return _count(&"idle_view", mini(idle_view_every, unseen))
 	if engaged:
 		return _count(&"engaged_far", _scaled(engaged_far_every))
-	if best < far_range * far_range:
-		return _count(&"near", _scaled(near_every))
-	return _count(&"far", _scaled(far_every))
+	return _count(&"near" if best < far_range * far_range else &"far", unseen)
 
 
 ## [param every] stretched by [member load_scale]; 1 stays 1.
@@ -137,5 +153,5 @@ static func until_beat(tick: int, seed: int, every: int) -> int:
 
 func describe() -> Dictionary:
 	return {"above": above, "near_every": near_every, "far_every": far_every, "far_range": far_range,
-		"close_range": close_range, "engaged_far_every": engaged_far_every, "engaged_range": engaged_range, "load_scale": load_scale, "nearest": nearest, "view_range": view_range,
+		"close_range": close_range, "engaged_far_every": engaged_far_every, "engaged_range": engaged_range, "idle_view_every": idle_view_every, "load_scale": load_scale, "nearest": nearest, "view_range": view_range,
 		"view_half_angle": view_half_angle, "on": _on, "people": _eyes.size(), "pinned": _pinned.size(), "counts": counts}

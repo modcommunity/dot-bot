@@ -430,6 +430,17 @@ func _test_think_tier() -> void:
 	_check(t.period(4, at[3], false) == DotBotThinkTier.MAX_PERIOD, "a stretched period stops at MAX_PERIOD")
 	t.load_scale = 1.0
 	t.engaged_far_every = 1
+	_check(t.period(2, at[1], false, true) == t.idle_view_every and t.period(2, at[1], false, false) == 1 and t.period(2, at[1], true, true) == 1, "idle_view_every: an idle bot in view thins out; one with a target, or fighting a person, stays full")
+	_check(t.period(1, at[0], false, true) == 1 and t.period(5, at[4] * Vector3(1, 1, -0.5), false, true) == 1, "an idle bot that is nearest or within close_range stays full rate")
+	_check(t.period(3, at[2], false, true) == t.near_every and t.period(4, at[3], false, true) == t.far_every, "an idle bot out of view: near_every and far_every as before")
+	t.idle_view_every = 9
+	_check(t.period(2, at[1], false, true) == t.far_every, "an idle bot in view never thinks slower than out of sight")
+	t.idle_view_every = 1
+	_check(t.period(2, at[1], false, true) == 1, "idle_view_every 1: a seen bot is full rate")
+	t.idle_view_every = 2
+	t.load_scale = 100.0
+	_check(t.period(2, at[1], false, true) == 2, "load_scale does not stretch idle_view_every")
+	t.load_scale = 1.0
 	t.nearest = 2
 	t.begin(32, eyes, looks, ids, at)
 	_check(t.period(5, at[4], false) == 1 and t.period(3, at[2], false) == t.near_every, "nearest 2 pins the two closest")
@@ -442,6 +453,74 @@ func _test_think_tier() -> void:
 		tick += DotBotThinkTier.until_beat(tick, 3, 4)
 	_check(thinks == 13 and tick == 53 and DotBotThinkTier.until_beat(7, 3, 1) == 1, "a period of 4 thinks on its beat from the first think on; 1 every tick")
 	_done()
+
+
+## The regression for think-rate tiers: a bot near a person (within close_range, among the nearest, or fighting them
+## within engaged_range) gives the very intents, tick for tick, that it gives thinking every tick, from idle through
+## its turn and its fight; and an idle bot a person only sees, thinned to idle_view_every, fires no later than two
+## periods after the every-tick bot (up to a period late to notice, and its idle look and rolls drift a little).
+func _test_think_tier_near_person() -> void:
+	_section("think-rate tiers leave a bot near a person as it was")
+	# distance to the person, tier.nearest, the person watching the bot
+	var cases := [[9.0, 0, false], [20.0, 3, false], [18.0, 0, true]]
+	for c in cases:
+		var every_tick: Array = _tier_duel(c[0], c[1], c[2], false)
+		var tiered: Array = _tier_duel(c[0], c[1], c[2], true)
+		var same: bool = every_tick[0] == tiered[0]
+		var fired: bool = every_tick[1] >= 0 and tiered[1] >= 0
+		if c[2]:
+			_check(fired and tiered[1] - every_tick[1] <= 2 * DotBotThinkTier.new().idle_view_every and tiered[2] > 0, "an idle bot a person sees at %d m thins out (%d skipped thinks) and fires within two periods of the every-tick bot (ticks %d and %d)" % [c[0], tiered[2], every_tick[1], tiered[1]])
+		else:
+			_check(fired and same and tiered[2] == 0, "a bot %d m from a person (nearest %d) thinks every tick: the same %d intents as without tiers, first shot on tick %d" % [c[0], c[1], every_tick[0].size(), tiered[1]])
+	_done()
+
+
+## Ticks the person of [method _tier_duel] spends behind a wall.
+const WALL_TICKS := 32
+
+
+## One bot against a person strafing [param distance] m ahead for 4 s, its brain run every tick or as the tiers say.
+## Returns [intent rows, first fire tick (-1: none), thinks skipped].
+func _tier_duel(distance: float, nearest: int, watching: bool, tiered: bool) -> Array:
+	var sc := _scene(Vector3(0, 0, -distance))
+	var me: DotBotContact = sc[0]
+	var person: DotBotContact = sc[1]
+	var world: DotBotWorld = sc[2]
+	# Turned 20 degrees off the person, who stands behind a wall for the first half second: the bot
+	# starts idle (seen, when the person watches it) and must turn to them once the wall is gone.
+	me.view_yaw = 20.0
+	me.view_pitch = 0.0
+	var clock := [0]
+	world.line_of_sight_fn = func(_a: Vector3, _b: Vector3) -> bool: return clock[0] >= WALL_TICKS
+	var brain := DotBotBrain.new(11, DotBotSettings.new())
+	var tier := DotBotThinkTier.new()
+	tier.nearest = nearest
+	var rows: Array = []
+	var first_fire := -1
+	var skipped := 0
+	var due := 0
+	var intent: DotBotIntent = null
+	var strafe_dir := 1.0
+	for tick in 256:
+		clock[0] = tick
+		var t := tick * TICK
+		var look := (me.eye() - person.eye()).normalized() if watching else Vector3(0, 0, -1)
+		tier.begin(32, PackedVector3Array([person.eye()]), PackedVector3Array([look]), PackedInt32Array([me.id]), PackedVector3Array([me.position]))
+		if not tiered or tick >= due or intent == null:
+			intent = brain.think(me, world, t)
+			var engaged := intent.target_id == person.id
+			due = tick + DotBotThinkTier.until_beat(tick, 5, tier.period(me.id, me.position, engaged, intent.target_id < 0))
+		else:
+			skipped += 1
+		rows.append([snappedf(intent.yaw, 0.0001), snappedf(intent.pitch, 0.0001), intent.fire, intent.move, intent.state, intent.target_id])
+		if intent.fire and first_fire < 0:
+			first_fire = tick
+		me.view_yaw = intent.yaw
+		me.view_pitch = intent.pitch
+		if fmod(t, 0.7) < TICK:
+			strafe_dir = -strafe_dir
+		_strafe_across(me, person, strafe_dir)
+	return [rows, first_fire, skipped]
 
 
 func _test_fire_mode() -> void:

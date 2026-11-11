@@ -77,6 +77,10 @@ The settings are per game, kept on a node as metadata (`DotBotSettings.of(game)`
 
 Each brain draws from its own `DotRandomStream` seeded from its id, and its clock is the caller's. Two runs with the same inputs play the same bot, which is what lets `headless_bots` hold every preset to a band without flaking. A game must not seed a bot from an object's instance id (it moves between runs).
 
+## Think-rate tiers
+
+In a crowd (`DotBotThinkTier.above` players, 16) not every bot runs its brain every tick. The rule for what a thinned bot may skip: **its thinking, never its body.** The game keeps moving it every tick on the commands of its last think (held buttons only, the view carried towards where it last looked, a turn after a gap held to one tick's turn rate), so its walk, its hitboxes and lag compensation are the same at any period, and the brain's cost is what is saved. A bot is full rate when it fights a person within `engaged_range`, is within `close_range` of one, is among the `nearest` to one, or is in a person's view cone with a target; a bot a person just hurt thinks on the next tick whatever its tier. What thins out: a bot no person sees or nears (`near_every`, `far_every`, stretched by `load_scale` under load), a bot fighting a person far away and unseen (`engaged_far_every`), and an idle bot (no target, or dead) that a person only sees (`idle_view_every`, 2, never stretched): in sight it shows only its walk, and the tick it picks a target it is no longer idle. `bot_selftest` holds a bot near a person to the same intents, tick for tick, with and without tiers.
+
 ## Hiding and searching
 
 Not every game's bots fight. A hiding game's bots need to know where people hide and where people look, and those are questions about the map, not about a target. Three helpers answer them, pure like the brain (everything comes in as arguments) and usable by any hiding game:
