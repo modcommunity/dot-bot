@@ -25,6 +25,13 @@ var mix: Dictionary = {HUNT: 1.0, LOOT: 1.0, HOLD: 1.0, SUPPORT: 1.0, SCOUT: 1.0
 var difficulty: String = ""
 ## `bot_<field>` values over the difficulty ([DotBotProfile.SPEC] fields).
 var skill: Dictionary = {}
+## `<field>` -> multiplier on the server's value, so a persona stays relative to bot_difficulty.
+var scale: Dictionary = {}
+## 0 to 0.5: each bot of this persona gets its own seeded jitter of up to this fraction on [constant SPREAD_FIELDS].
+var spread: float = 0.0
+
+## The fields [member spread] jitters: how fast and how well a bot sees and aims.
+const SPREAD_FIELDS: PackedStringArray = ["reaction", "aim_error", "aim_floor", "aim_settle", "turn_smooth", "prediction", "react_jitter", "track_lag"]
 
 
 ## The `bot` profile schema as plain dictionaries (the shape of dot-profile's field()), so dot-bot needs no dot-profile.
@@ -34,6 +41,8 @@ static func schema() -> Array:
 		{"name": "weight", "type": "float", "default": 1.0, "min": 0.0, "max": 1000.0},
 		{"name": "difficulty", "type": "string", "default": "", "enum": ["", "easy", "medium", "hard", "nightmare"]},
 		{"name": "skill", "type": "dict", "default": {}},
+		{"name": "scale", "type": "dict", "default": {}},
+		{"name": "spread", "type": "float", "default": 0.0, "min": 0.0, "max": 0.5},
 		{"name": "enabled", "type": "bool", "default": true},
 	]
 	for b in BEHAVIOURS:
@@ -55,6 +64,9 @@ static func from_values(p_id: String, values: Dictionary) -> DotBotPersona:
 	out.difficulty = str(values.get("difficulty", ""))
 	var raw: Variant = values.get("skill", {})
 	out.skill = (raw as Dictionary).duplicate() if raw is Dictionary else {}
+	var raw_scale: Variant = values.get("scale", {})
+	out.scale = (raw_scale as Dictionary).duplicate() if raw_scale is Dictionary else {}
+	out.spread = clampf(float(values.get("spread", 0.0)), 0.0, 0.5)
 	for b in BEHAVIOURS:
 		out.mix[b] = maxf(float(values.get(String(b), 1.0)), 0.0)
 	return out
@@ -99,6 +111,31 @@ func profile_over(base: DotBotProfile) -> DotBotProfile:
 	return out
 
 
+## Writes this persona's profile for one bot into [param out], in place: [param base] (or the persona's
+## difficulty), its skill values, its scale, then the bot's own [member spread] drawn from [param bot_seed].
+## turn_rate never rises above the base's: bot_turn_rate is the server's promise of the fastest view.
+func derive_into(out: DotBotProfile, base: DotBotProfile, bot_seed: int) -> void:
+	var start: DotBotProfile = DotBotProfile.preset(difficulty) if difficulty != "" else null
+	out.copy_from(start if start != null else base)
+	for field in skill:
+		out.set_number(str(field), float(skill[field]))
+	for field in scale:
+		var name := str(field)
+		if not DotBotProfile.spec_for(name).is_empty():
+			out.set_number(name, out.get_field(name) * maxf(float(scale[field]), 0.0))
+	if spread > 0.0:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash([String(id), bot_seed])
+		for name in SPREAD_FIELDS:
+			out.set_number(name, out.get_field(name) * (1.0 + rng.randf_range(-spread, spread)))
+	out.turn_rate = minf(out.turn_rate, base.turn_rate)
+
+
+## True when [method derive_into] would change anything over the base.
+func shapes_skill() -> bool:
+	return difficulty != "" or not skill.is_empty() or not scale.is_empty() or spread > 0.0
+
+
 ## How much this persona leans to defending, attacking and supporting (x, y, z, each 0 to 1), from its mix:
 ## holding leans to defence, hunting and scouting to attack, supporting to support.
 func role_bias() -> Vector3:
@@ -114,4 +151,4 @@ func role_bias() -> Vector3:
 
 
 func describe() -> Dictionary:
-	return {"id": String(id), "weight": weight, "difficulty": difficulty, "mix": mix.duplicate(), "skill": skill.duplicate()}
+	return {"id": String(id), "weight": weight, "difficulty": difficulty, "mix": mix.duplicate(), "skill": skill.duplicate(), "scale": scale.duplicate(), "spread": spread}

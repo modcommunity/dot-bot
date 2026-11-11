@@ -328,6 +328,32 @@ func _test_personas() -> void:
 		schema_names.append(f["name"])
 	_check(schema_names.has("hunt") and schema_names.has("support") and schema_names.has("weight") and schema_names.has("skill"), "the profile schema names the mix, weight and skill")
 	_check(DotBotPersona.profile_schemas().has("bot"), "profile_check finds the bot kind")
+
+	var dealer := DotBotPersonaPool.new()
+	dealer.personas = [DotBotPersona.from_values("a", {"weight": 2.0}), DotBotPersona.from_values("b", {}), DotBotPersona.from_values("c", {})]
+	var dealt := {}
+	for i in 8:
+		var got := dealer.deal(StringName("d%d" % i), rng)
+		dealt[got.id] = int(dealt.get(got.id, 0)) + 1
+	_check(dealt.get(&"a", 0) == 4 and dealt.get(&"b", 0) == 2 and dealt.get(&"c", 0) == 2, "eight bots dealt 2:1:1 get 4/2/2", str(dealt))
+	_check(dealer.given(&"d0") == dealer.deal(&"d0", rng), "a dealt bot keeps its persona")
+
+	var game := DotBotSettings.new()
+	var _set := game.set_difficulty("medium")
+	var keen := DotBotPersona.from_values("keen", {"scale": {"reaction": 0.5, "turn_rate": 3.0, "bogus": 2.0}, "spread": 0.2})
+	var one := DotBotSettings.derived(game, keen, 1)
+	var two := DotBotSettings.derived(game, keen, 2)
+	var medium := DotBotProfile.preset("medium")
+	_check(one.profile.reaction < medium.reaction * 0.61 and one.profile.reaction > medium.reaction * 0.39, "scale halves reaction, give or take the spread", str(one.profile.reaction))
+	_check(not is_equal_approx(one.profile.aim_error, two.profile.aim_error), "two bots of one persona aim differently", "%s %s" % [one.profile.aim_error, two.profile.aim_error])
+	_check(is_equal_approx(DotBotSettings.derived(game, keen, 1).profile.aim_error, one.profile.aim_error), "the same bot seed gives the same bot")
+	_check(one.profile.turn_rate <= game.profile.turn_rate, "a persona never turns faster than bot_turn_rate", str(one.profile.turn_rate))
+	var held := one.profile
+	_check(not one.sync(), "sync does nothing while the game settings stand")
+	var _hard := game.set_difficulty("hard")
+	_check(one.sync() and one.profile == held and one.profile.preset_name == "hard", "sync follows a difficulty change in place")
+	var plain := DotBotSettings.derived(game, DotBotPersona.from_values("plain", {}), 9)
+	_check(is_equal_approx(plain.profile.aim_error, game.profile.aim_error) and not DotBotPersona.from_values("plain", {}).shapes_skill(), "a persona with no skill keys copies the game's values")
 	_done()
 
 

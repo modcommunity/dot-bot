@@ -232,6 +232,23 @@ func set_field(field: String, text: String) -> DotResult:
 	return DotResult.success(value)
 
 
+## Sets one field to a number clamped to its range; false for an unknown field.
+func set_number(field: String, value: float) -> bool:
+	var row := spec_for(field)
+	if row.is_empty():
+		return false
+	set(StringName(field), clampf(value, float(row[COL_MIN]), float(row[COL_MAX])))
+	return true
+
+
+## Every field copied from [param other], in place, so a brain holding this sees it.
+func copy_from(other: DotBotProfile) -> void:
+	preset_name = other.preset_name
+	for row: Array in SPEC:
+		var key := StringName(row[COL_FIELD])
+		set(key, other.get(key))
+
+
 func get_field(field: String) -> float:
 	return float(get(StringName(field)))
 

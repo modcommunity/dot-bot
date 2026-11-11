@@ -87,6 +87,39 @@ func assign(bot: StringName, rng: RandomNumberGenerator) -> DotBotPersona:
 	return p
 
 
+## The persona [param bot] holds, or null.
+func given(bot: StringName) -> DotBotPersona:
+	return _given.get(bot, null)
+
+
+## Like [method assign], but dealt rather than drawn: the persona furthest below its weight's share of the
+## bots already given one, ties by [param rng]. A team of eight gets eight characters, not five balanced ones.
+func deal(bot: StringName, rng: RandomNumberGenerator) -> DotBotPersona:
+	if _given.has(bot):
+		return _given[bot]
+	var counts := {}
+	for held in _given:
+		var given_id: StringName = (_given[held] as DotBotPersona).id
+		counts[given_id] = int(counts.get(given_id, 0)) + 1
+	var best: DotBotPersona = null
+	var best_score := INF
+	var ties := 0
+	for p in candidates():
+		var w := weight_of(p) if not personas.is_empty() else 1.0
+		var score := (float(counts.get(p.id, 0)) + 1.0) / maxf(w, 0.0001)
+		if score < best_score - 0.000001:
+			best = p
+			best_score = score
+			ties = 1
+		elif score <= best_score + 0.000001:
+			ties += 1
+			if rng.randi_range(1, ties) == 1:
+				best = p
+	_given[bot] = best
+	DotLog.debug(CHANNEL, "bot persona dealt", {"bot": String(bot), "persona": String(best.id)})
+	return best
+
+
 func release(bot: StringName) -> void:
 	_given.erase(bot)
 

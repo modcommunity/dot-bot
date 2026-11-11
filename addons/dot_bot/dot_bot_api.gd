@@ -36,5 +36,6 @@ extends RefCounted
 # 17: DotBotBrain.target_first (a bot that sees its target tests it before scanning every body; same choice, a switch for comparing).
 # 18: DotBotWorld.contact_of (the contact for an id out of this tick's list; a world that indexes its contacts overrides it, the brain asks it instead of walking the list).
 # 19: DotBotObjective, DotBotGoal, DotBotWorld.objective, DotBotBrain.goal, DotBotPersona.role_bias; profile rows role_defend, role_attack, role_support, objective_focus, defend_radius (team jobs in a flag mode).
-const LEVEL := 19
+# 20: DotBotPersona.scale, spread, derive_into, shapes_skill; DotBotSettings.derived, sync; DotBotPersonaPool.deal, given; DotBotProfile.set_number, copy_from (each bot its own persona).
+const LEVEL := 20
 const OLDEST := 1

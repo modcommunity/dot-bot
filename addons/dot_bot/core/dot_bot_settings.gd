@@ -54,6 +54,12 @@ var _cvars: Dictionary = {}
 ## True while this writes its own cvars, so their `changed` is not taken for an override.
 var _writing: bool = false
 
+## For [method derived]: what this follows, and the base revision it last derived from.
+var _base: DotBotSettings = null
+var _persona: DotBotPersona = null
+var _seed: int = 0
+var _base_revision: int = -1
+
 
 ## The settings on [param node], made (at the default preset) and attached if missing.
 static func of(node: Object) -> DotBotSettings:
@@ -73,6 +79,28 @@ static func attach(node: Object, settings: DotBotSettings) -> DotBotSettings:
 	if node != null:
 		node.set_meta(META, settings)
 	return settings
+
+
+## One bot's own settings: [param persona] over [param base] for [param bot_seed]. Call [method sync]
+## before reading it; it follows the base when that changes (a cvar, a preset).
+static func derived(base: DotBotSettings, persona: DotBotPersona, bot_seed: int) -> DotBotSettings:
+	var out := DotBotSettings.new()
+	out._base = base
+	out._persona = persona
+	out._seed = bot_seed
+	out._base_revision = -1
+	out.sync()
+	return out
+
+
+## Re-derives from the base when it changed since; true when it did. One int compare otherwise.
+func sync() -> bool:
+	if _base == null or _base.revision == _base_revision:
+		return false
+	_base_revision = _base.revision
+	_persona.derive_into(profile, _base.profile, _seed)
+	_bump()
+	return true
 
 
 func difficulty() -> String:
@@ -284,7 +312,10 @@ func _bump() -> void:
 
 
 func describe() -> Dictionary:
-	return {"difficulty": profile.preset_name, "overrides": overrides.duplicate(), "revision": revision}
+	var out := {"difficulty": profile.preset_name, "overrides": overrides.duplicate(), "revision": revision}
+	if _persona != null:
+		out["persona"] = String(_persona.id)
+	return out
 
 
 func describe_lines() -> PackedStringArray:
