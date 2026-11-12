@@ -3,14 +3,14 @@ extends "res://examples/selftest/policy_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 629
+const CHECKS := 635
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 55
+const SECTIONS := 56
 
 
 func _ready() -> void:
@@ -45,6 +45,7 @@ func _run() -> void:
 	_test_route()
 	await _test_nav()
 	await _test_nav_cache()
+	await _test_nav_cell()
 	_test_surf()
 	await _test_ride_edges()
 	await _test_drop_behind_wall()
@@ -722,6 +723,57 @@ func _test_nav_cache() -> void:
 	_check(other.bake(root, agent).ok and not other.last_bake_cached, "another map id has its own file")
 	DirAccess.remove_absolute(nav.cache_path())
 	DirAccess.remove_absolute(other.cache_path())
+	root.queue_free()
+	_done()
+
+
+## A per-bake cell: the radius rounds to it, the map takes it, the cache keys on it, and a door the default rounding shuts opens.
+func _test_nav_cell() -> void:
+	_section("nav cell: a bake's own cell size rounds the radius, sets the map, keys the cache, opens a narrow door")
+	var root := Node3D.new()
+	add_child(root)
+	var body := StaticBody3D.new()
+	root.add_child(body)
+	var boxes := [[Vector3(20.0, 0.2, 20.0), Vector3(0.0, -0.1, 0.0)],
+		[Vector3(0.4, 3.0, 9.4), Vector3(0.0, 1.5, -5.3)], [Vector3(0.4, 3.0, 9.4), Vector3(0.0, 1.5, 5.3)]]
+	for b: Array in boxes:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = b[0]
+		shape.shape = box
+		shape.position = b[1]
+		body.add_child(shape)
+	await get_tree().physics_frame
+	var from := Vector3(-6.0, 0.0, 0.0)
+	var to := Vector3(6.0, 0.0, 0.0)
+
+	var plain := DotBotNav.new()
+	var shut := plain.bake(root, {"radius": 0.4064, "height": 1.83, "climb": 0.4})
+	_check(shut.ok and is_equal_approx(plain.mesh.cell_size, DotBotNav.CELL) and is_equal_approx(plain.mesh.agent_radius, 0.525),
+		"default cell: 0.4064 m rounds to 0.525 m", str(plain.mesh.agent_radius))
+	_check(plain.path_length(from, to) == INF, "and a 1.2 m door is shut to it", str(plain.path_length(from, to)))
+
+	var fine := DotBotNav.new()
+	var dir := "user://dot_bot_nav_cell_test"
+	fine.cache_dir = dir
+	fine.cache_id = "door"
+	DirAccess.remove_absolute(fine.cache_path())
+	var open := fine.bake(root, {"radius": 0.4064, "height": 1.83, "climb": 0.4, "cell": 0.1355, "cell_height": 0.05})
+	_check(open.ok and is_equal_approx(fine.mesh.cell_size, 0.1355) and absf(fine.mesh.agent_radius - 0.4065) < 0.001
+		and is_equal_approx(fine.mesh.agent_height, 1.85), "cell 0.1355: the radius is 0.4065 m, the height 1.85 m", "%s %s" % [fine.mesh.agent_radius, fine.mesh.agent_height])
+	_check(is_equal_approx(NavigationServer3D.map_get_cell_size(fine._map), 0.1355) and is_equal_approx(NavigationServer3D.map_get_cell_height(fine._map), 0.05),
+		"the navigation map takes the bake's cell size")
+	_check(fine.path_length(from, to) < 14.0, "and the 1.2 m door is open", str(fine.path_length(from, to)))
+
+	var coarse := DotBotNav.new()
+	coarse.cache_dir = dir
+	coarse.cache_id = "door"
+	_check(coarse.bake(root, {"radius": 0.4064, "height": 1.83, "climb": 0.4}).ok and not coarse.last_bake_cached
+		and is_equal_approx(coarse.mesh.cell_size, DotBotNav.CELL), "another cell size misses the cache")
+	DirAccess.remove_absolute(coarse.cache_path())
+	plain.clear()
+	fine.clear()
+	coarse.clear()
 	root.queue_free()
 	_done()
 

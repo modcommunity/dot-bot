@@ -127,4 +127,4 @@ var path := nav.path(bot_feet, goal)          # PackedVector3Array, empty when u
 var spot := nav.random_point(stream)
 ```
 
-The family's maps are built in code, so the mesh is baked from the static colliders with the engine's `NavigationServer3D` on the spot, on a map of its own so a game's navigation is never disturbed. `random_point` weights the mesh's polygons by area so a seeded game picks the same hiding spots every run.
+The family's maps are built in code, so the mesh is baked from the static colliders with the engine's `NavigationServer3D` on the spot, on a map of its own so a game's navigation is never disturbed. The radius rounds up to whole cells of `DotBotNav.CELL` (0.175 m), so a body whose radius is not a multiple passes `cell` (and `cell_height`) in the agent dictionary: a 0.4064 m radius bakes as 0.525 m at the default and is shut out of a 1.2 m door that `"cell": 0.1355` (0.4065 m) leaves open. The cell is part of the cache digest and sets the navigation map's cell size (API level 23). `random_point` weights the mesh's polygons by area so a seeded game picks the same hiding spots every run.

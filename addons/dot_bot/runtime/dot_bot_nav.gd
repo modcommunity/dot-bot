@@ -7,8 +7,9 @@ extends RefCounted
 
 const CHANNEL := "dot.bot.nav"
 
-## Metres a cell of the mesh covers, flat and up. Half a body's radius, so the radius is whole
-## cells and a doorway of 0.9 m is a doorway; finer costs bake time on a big map.
+## Default metres a cell of the mesh covers, flat and up (a bake's `cell` and `cell_height` override
+## them). The radius rounds up to whole cells, so a body whose radius is not a multiple wants its own
+## cell: 0.4064 m at 0.175 bakes as 0.525 m. Finer costs bake time on a big map.
 const CELL := 0.175
 const CELL_HEIGHT := 0.1
 
@@ -69,7 +70,7 @@ var _total_area: float = 0.0
 
 ## Bakes the static colliders under [param root]. [param agent]: `radius`, `height` (the lowest
 ## a body can go, crouched, so crawl spaces are on the mesh), `climb` (a step), `slope`
-## (degrees); [param mask] the collision layers that count as ground and walls (0 for all).
+## (degrees), `cell` and `cell_height` (default [constant CELL], [constant CELL_HEIGHT]); [param mask] the collision layers that count as ground and walls (0 for all).
 ## With [param bodies] (nodes under [param root]), only those and their children are parsed.
 func bake(root: Node3D, agent: Dictionary = {}, mask: int = 0, bodies: Array = []) -> DotResult:
 	var parsed := _parse(root, agent, mask, bodies)
@@ -129,13 +130,15 @@ func _parse(root: Node3D, agent: Dictionary, mask: int, bodies: Array) -> DotRes
 	_cache_digest = ""
 	mesh = NavigationMesh.new()
 	_poly_grid.clear()
-	mesh.cell_size = CELL
-	mesh.cell_height = CELL_HEIGHT
+	var cell := maxf(float(agent.get("cell", CELL)), 0.01)
+	var cell_height := maxf(float(agent.get("cell_height", CELL_HEIGHT)), 0.01)
+	mesh.cell_size = cell
+	mesh.cell_height = cell_height
 	# Whole cells, rounded the safe way (a body wider and taller, a step lower), which the baker
 	# does anyway and warns about.
-	mesh.agent_radius = ceilf(float(agent.get("radius", 0.35)) / CELL - 0.001) * CELL
-	mesh.agent_height = ceilf(float(agent.get("height", 0.9)) / CELL_HEIGHT - 0.001) * CELL_HEIGHT
-	mesh.agent_max_climb = floorf(float(agent.get("climb", 0.4)) / CELL_HEIGHT + 0.001) * CELL_HEIGHT
+	mesh.agent_radius = ceilf(float(agent.get("radius", 0.35)) / cell - 0.001) * cell
+	mesh.agent_height = ceilf(float(agent.get("height", 0.9)) / cell_height - 0.001) * cell_height
+	mesh.agent_max_climb = floorf(float(agent.get("climb", 0.4)) / cell_height + 0.001) * cell_height
 	mesh.agent_max_slope = float(agent.get("slope", 46.0))
 	mesh.region_min_size = 2.0
 	mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
@@ -224,8 +227,8 @@ func _take_in() -> DotResult:
 		return DotResult.fail(DotError.CODE_INVALID, "the bake found nowhere to walk")
 
 	_map = NavigationServer3D.map_create()
-	NavigationServer3D.map_set_cell_size(_map, CELL)
-	NavigationServer3D.map_set_cell_height(_map, CELL_HEIGHT)
+	NavigationServer3D.map_set_cell_size(_map, mesh.cell_size)
+	NavigationServer3D.map_set_cell_height(_map, mesh.cell_height)
 	NavigationServer3D.map_set_active(_map, true)
 	_region = NavigationServer3D.region_create()
 	NavigationServer3D.region_set_map(_region, _map)

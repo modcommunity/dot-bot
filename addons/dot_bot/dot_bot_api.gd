@@ -39,5 +39,6 @@ extends RefCounted
 # 20: DotBotPersona.scale, spread, derive_into, shapes_skill; DotBotSettings.derived, sync; DotBotPersonaPool.deal, given; DotBotProfile.set_number, copy_from (each bot its own persona).
 # 21: DotBotThinkTier.idle_view_every and period(..., idle) (an idle bot a person only sees thins out; idle defaults false, so callers that do not pass it are unchanged).
 # 22: DotBotThinkTier.body_near_every, body_far_every, body_period, body_counts (body tiers: the game may tick an unseen near or far bot's motor every few ticks; off by default).
-const LEVEL := 22
+# 23: DotBotNav.bake / bake_in_background agent keys `cell` and `cell_height` (per-bake cell size, in the cache digest and the map's cell size; defaults CELL, CELL_HEIGHT unchanged).
+const LEVEL := 23
 const OLDEST := 1
