@@ -3,14 +3,14 @@ extends "res://examples/selftest/policy_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 643
+const CHECKS := 646
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
 
 ## Sections entered against sections that ran to their last line. A runtime error inside a
 ## section aborts that function and nothing says so.
-const SECTIONS := 57
+const SECTIONS := 58
 
 
 func _ready() -> void:
@@ -51,6 +51,7 @@ func _run() -> void:
 	await _test_drop_behind_wall()
 	await _test_links()
 	await _test_stitches()
+	await _test_join_sliced()
 	await _test_unlock_export()
 	await _test_ladders()
 	await _test_door_then_ladder()
@@ -199,6 +200,33 @@ func _test_stitches() -> void:
 		_check(baked.ok and (count > 0) == c[2], "stitch %s: %s" % [c[0], "joined" if c[2] else "left apart"], str(count))
 		nav.clear()
 		made[0].queue_free()
+	_done()
+
+
+## join_step spreads join's drop, hop and stitch search over calls and adds the very edges join does.
+func _test_join_sliced() -> void:
+	_section("links: join_step adds join's edges a slice at a time, the nav held unready until done")
+	var made := await _floors([Vector3.ZERO, Vector3(11.0, 0.0, 0.0), Vector3(0.0, -3.0, 10.0), Vector3(0.0, 0.0, -13.0)], Vector3(10.0, 0.0, 10.0))
+	var agent := {"radius": 0.35, "height": 1.0, "climb": 0.4}
+	var whole := DotBotNav.new()
+	var sliced := DotBotNav.new()
+	var baked := whole.bake(made[0], agent, 0, [made[1]]).ok and sliced.bake(made[0], agent, 0, [made[1]]).ok
+	var at_once := DotBotLinks.new().join(whole)
+	var links := DotBotLinks.new()
+	var calls := 1
+	var held := true
+	while not links.join_step(sliced, Time.get_ticks_usec() + 1) and calls < 100000:
+		calls += 1
+		var way: PackedVector3Array = sliced.route(Vector3.ZERO, Vector3(11.0, 0.0, 0.0))["points"]
+		held = held and not sliced.is_ready() and way.is_empty()
+	_check(baked and int(at_once.get("drops", 0)) > 0 and int(at_once.get("hops", 0)) > 0 and int(at_once.get("stitches", 0)) > 0,
+		"the floors have drops, hops and stitches to find", str(at_once))
+	_check(calls > 3 and held and sliced.is_ready(), "sliced: many calls, no route between them, ready after", str(calls))
+	_check(links.joined == at_once and sliced.rides() == whole.rides(), "sliced: the same stats and the same edges, ids and order",
+		"%s vs %s, %d vs %d edges" % [links.joined, at_once, sliced.rides().size(), whole.rides().size()])
+	whole.clear()
+	sliced.clear()
+	made[0].queue_free()
 	_done()
 
 

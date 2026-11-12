@@ -253,8 +253,12 @@ func _take_in() -> DotResult:
 ## Baked, and taken in by the navigation server, which happens on a later frame (it syncs its
 ## maps on the process frame), never during [method bake]: a query before then answers with the
 ## origin or fails. [method random_point] needs
-## only the bake.
+## only the bake. False while [member held].
 func is_ready() -> bool:
+	return not held and _live()
+
+
+func _live() -> bool:
 	if _synced:
 		return true
 	if not is_baked() or NavigationServer3D.map_get_iteration_id(_map) == 0:
@@ -385,6 +389,9 @@ func clear() -> void:
 	_map = RID()
 	_synced = false
 	_baking = false
+	held = false
+	_uses.clear()
+	_uses_at = 0
 	_generation += 1
 	mesh = null
 	_areas = PackedFloat32Array()
@@ -411,6 +418,18 @@ const LINK_RADIUS := 1.5
 
 var _batching := false
 var _batch_dirty := false
+
+## Set while a game steps a [method begin_edges] job over frames: [method is_ready] answers false, so no
+## route is laid over a half-joined mesh, and bots start once it is cleared. [method clear] clears it.
+var held := false:
+	set(on):
+		held = on
+		# joined() snaps through closest() only when ready, so a graph cached while held is stale
+		_ride_graph = null
+
+# Polygons per open-border edge key, counted once per bake for every edge search, from polygon _uses_at on.
+var _uses := {}
+var _uses_at := 0
 
 ## Adds a one-way edge from [param from] to [param to] that is ridden, not walked (a surf ramp, a drop), under [param id]; [method route] crosses it when cheaper and says where. [param cost] scales its length. Kept across a re-bake; [method clear_rides] drops them.
 ## It is a navigation link because the bake leaves out faces steeper than the slope limit, so surf maps are islands.
@@ -457,25 +476,14 @@ func clear_rides() -> void:
 ## Adds one-way drop edges from the mesh's open borders down to lower floor, id [param first_id] up, one per [param spacing] metres of rim, at most [param limit]; returns how many.
 ## A landing is the nearest mesh point below the rim, kept only when it lies under the probe and physics rays out and down hit nothing.
 func find_drops(first_id: int, min_drop: float = 1.2, max_drop: float = 24.0, spacing: float = 4.0, limit: int = 400, cost: float = 2.0) -> int:
-	begin_batch()
-	var n := _find_edges(first_id, [0.9, 1.6], min_drop, max_drop, spacing, limit, cost, false)
-	end_batch()
-	return n
+	return _run_edges(begin_edges(&"drops", first_id, {"min_drop": min_drop, "max_drop": max_drop, "spacing": spacing, "limit": limit, "cost": cost}))
 
 
 ## Adds one-way hop edges from the mesh's rims across a gap to another island's floor (at most 0.9 m higher, any
 ## depth lower), id [param first_id] up: a jump a body makes at the rim. [param max_gap] metres is what a
 ## standing run-up clears. The landing must be another island, or the edge only shortens a walk.
 func find_hops(first_id: int, max_gap: float = 4.0, spacing: float = 1.5, limit: int = 800, cost: float = 3.0) -> int:
-	var reaches: Array = []
-	var gap := 2.0
-	while gap <= max_gap + 0.01:
-		reaches.append(gap)
-		gap += 0.75
-	begin_batch()
-	var n := _find_edges(first_id, reaches, -0.9, 24.0, spacing, limit, cost, true)
-	end_batch()
-	return n
+	return _run_edges(begin_edges(&"hops", first_id, {"max_gap": max_gap, "spacing": spacing, "limit": limit, "cost": cost}))
 
 
 ## Joins neighbouring islands where their rims come within [param max_gap] metres sideways: the lower rim climbs at most [param max_rise] to the higher, the higher drops to the lower, and a chest-high ray between them is clear.
@@ -484,103 +492,123 @@ const STITCH_CANDIDATES := 8
 
 
 func find_stitches(first_id: int, max_gap: float = 3.0, max_rise: float = 0.9, limit: int = 600, cost: float = 3.0) -> int:
-	if not is_ready():
-		return 0
-	var all := islands()
+	var job := begin_edges(&"stitches", first_id, {"max_gap": max_gap, "max_rise": max_rise, "limit": limit, "cost": cost})
+	var _done := step_edges(job)
+	return int(job["added"])
+
+
+func _run_edges(job: Dictionary) -> int:
+	begin_batch()
+	var _done := step_edges(job)
+	end_batch()
+	return int(job["added"])
+
+
+## [method find_drops], [method find_hops] or [method find_stitches] ([param kind] `&"drops"`, `&"hops"`,
+## `&"stitches"`) as a job [method step_edges] works through a slice at a time, for a map whose search
+## outlasts a frame. [param options] are those methods' parameters by name. Same edges, ids and count (`"added"`).
+func begin_edges(kind: StringName, first_id: int, options: Dictionary = {}) -> Dictionary:
+	var job := {"kind": kind, "first_id": first_id, "generation": _generation, "stage": 0, "i": 0, "added": 0, "done": not _live()}
+	var limit_default: int = 400 if kind == &"drops" else (800 if kind == &"hops" else 600)
+	job["limit"] = int(options.get("limit", limit_default))
+	job["cost"] = float(options.get("cost", 2.0 if kind == &"drops" else 3.0))
+	match kind:
+		&"drops":
+			job["reaches"] = [0.9, 1.6]
+			job["min_drop"] = float(options.get("min_drop", 1.2))
+			job["max_drop"] = float(options.get("max_drop", 24.0))
+			job["spacing"] = float(options.get("spacing", 4.0))
+			job["other_island"] = false
+		&"hops":
+			var reaches: Array = []
+			var max_gap := float(options.get("max_gap", 4.0))
+			var gap := 2.0
+			while gap <= max_gap + 0.01:
+				reaches.append(gap)
+				gap += 0.75
+			job["reaches"] = reaches
+			job["min_drop"] = -0.9
+			job["max_drop"] = 24.0
+			job["spacing"] = float(options.get("spacing", 1.5))
+			job["other_island"] = true
+		&"stitches":
+			job["max_gap"] = float(options.get("max_gap", 3.0))
+			job["max_rise"] = float(options.get("max_rise", 0.9))
+		_:
+			job["done"] = true
+	return job
+
+
+## Works on [param job] until it is done (true) or [method Time.get_ticks_usec] reaches [param until_usec]
+## (false; 0 runs it out). Edges it adds reach the server's map when it is done; a job outlived by
+## [method clear] or a new bake stops where it was.
+func step_edges(job: Dictionary, until_usec: int = 0) -> bool:
+	if bool(job["done"]):
+		return true
+	if int(job["generation"]) != _generation:
+		job["done"] = true
+		return true
+	var was := _batching
+	_batching = true
+	var finished: bool = _step_stitches(job, until_usec) if job["kind"] == &"stitches" else _step_edges(job, until_usec)
+	_batching = was
+	if finished:
+		job["done"] = true
+		if not was:
+			if _batch_dirty and _map.is_valid():
+				NavigationServer3D.map_force_update(_map)
+			_batch_dirty = false
+	return finished
+
+
+static func _past(until_usec: int) -> bool:
+	return until_usec > 0 and Time.get_ticks_usec() >= until_usec
+
+
+## Counts the polygons on each mesh edge into _uses, from where the last call stopped; true when all are.
+func _count_uses(until_usec: int) -> bool:
 	var vertices := mesh.get_vertices()
-	var uses := {}
-	for i in range(mesh.get_polygon_count()):
-		var polygon := mesh.get_polygon(i)
+	var count := mesh.get_polygon_count()
+	while _uses_at < count:
+		var polygon := mesh.get_polygon(_uses_at)
 		for k in polygon.size():
 			var key := DotBotNavGeometry.edge_key(DotBotNavGeometry.vertex_key(vertices[polygon[k]]), DotBotNavGeometry.vertex_key(vertices[polygon[(k + 1) % polygon.size()]]))
-			uses[key] = uses.get(key, 0) + 1
-	var grid := {}
-	var rim: Array = []
-	for i in range(mesh.get_polygon_count()):
-		var polygon := mesh.get_polygon(i)
-		var owner := _island_of[i] if i < _island_of.size() else -1
-		for k in polygon.size():
-			var pa := vertices[polygon[k]]
-			var pb := vertices[polygon[(k + 1) % polygon.size()]]
-			if uses.get(DotBotNavGeometry.edge_key(DotBotNavGeometry.vertex_key(pa), DotBotNavGeometry.vertex_key(pb)), 0) != 1:
-				continue
-			# two points per rim edge, so a long wall of mesh still has candidates along it
-			for p: Vector3 in [pa, pa.lerp(pb, 0.5)]:
-				var cell := Vector2i(floori(p.x / max_gap), floori(p.z / max_gap))
-				if not grid.has(cell):
-					grid[cell] = []
-				grid[cell].append(rim.size())
-				rim.append([p, owner])
-	if all.size() < 2:
-		return 0
-	var best := {}
-	for entry: Array in rim:
-		var v: Vector3 = entry[0]
-		var a: int = entry[1]
-		var cv := Vector2i(floori(v.x / max_gap), floori(v.z / max_gap))
-		for dx in range(-1, 2):
-			for dz in range(-1, 2):
-				for j: int in grid.get(Vector2i(cv.x + dx, cv.y + dz), []):
-					var w: Vector3 = rim[j][0]
-					var b: int = rim[j][1]
-					if b == a or a < 0 or b < 0 or a > b:
-						continue
-					var flat := Vector2(v.x - w.x, v.z - w.z).length()
-					var dy := absf(v.y - w.y)
-					if flat > max_gap * (1.0 - 0.5 * minf(dy / max_rise, 1.0)) or dy > 24.0 or (dy > max_rise and flat > 0.5):
-						continue
-					var score := flat + dy
-					var pair := Vector2i(a, b)
-					if not best.has(pair):
-						best[pair] = []
-					var kept: Array = best[pair]
-					kept.append([v, w, score])
-					kept.sort_custom(func(x: Array, y: Array) -> bool: return x[2] < y[2])
-					if kept.size() > STITCH_CANDIDATES:
-						kept.resize(STITCH_CANDIDATES)
-	var space: PhysicsDirectSpaceState3D = null
-	if _root != null and is_instance_valid(_root) and _root.is_inside_tree():
-		space = _root.get_world_3d().direct_space_state
-	var added := 0
-	var chest := Vector3(0.0, 0.9, 0.0)
-	for pair: Vector2i in best:
-		# the closest pair may lie through a wall (a doorway's jamb); the next closest that sees across is the link
-		var v := Vector3.INF
-		var w := Vector3.INF
-		for candidate: Array in best[pair]:
-			if space == null or space.intersect_ray(PhysicsRayQueryParameters3D.create(candidate[0] + chest, candidate[1] + chest)).is_empty():
-				v = candidate[0]
-				w = candidate[1]
-				break
-		if v == Vector3.INF or _buried(v) or _buried(w):
-			continue
-		var low := v if v.y <= w.y else w
-		var high := w if v.y <= w.y else v
-		add_ride(high, low, first_id + added, cost)
-		added += 1
-		if high.y - low.y <= max_rise:
-			add_ride(low, high, first_id + added, cost)
-			added += 1
-		if added >= limit:
-			break
-	return added
+			_uses[key] = _uses.get(key, 0) + 1
+		_uses_at += 1
+		if _uses_at % 128 == 0 and _past(until_usec):
+			return _uses_at >= count
+	return true
 
 
-func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float, spacing: float, limit: int, cost: float, other_island: bool) -> int:
-	if not is_ready():
-		return 0
+func _step_edges(job: Dictionary, until_usec: int) -> bool:
+	if int(job["stage"]) == 0:
+		# the island and polygon lookups build on first use; built here they are a slice of their own
+		var _all := islands()
+		_poly_grid_ready(mesh.get_vertices())
+		job["stage"] = 1
+		if _past(until_usec):
+			return false
+	if int(job["stage"]) == 1:
+		if not _count_uses(until_usec):
+			return false
+		job["stage"] = 2
+		job["seen"] = {}
+		if _past(until_usec):
+			return false
 	var vertices := mesh.get_vertices()
-	var uses := {}
-	for i in range(mesh.get_polygon_count()):
-		var polygon := mesh.get_polygon(i)
-		for k in polygon.size():
-			var a := DotBotNavGeometry.vertex_key(vertices[polygon[k]])
-			var b := DotBotNavGeometry.vertex_key(vertices[polygon[(k + 1) % polygon.size()]])
-			var key := DotBotNavGeometry.edge_key(a, b)
-			uses[key] = uses.get(key, 0) + 1
-	var seen := {}
-	var added := 0
-	for i in range(mesh.get_polygon_count()):
+	var count := mesh.get_polygon_count()
+	var seen: Dictionary = job["seen"]
+	var reaches: Array = job["reaches"]
+	var min_drop: float = job["min_drop"]
+	var max_drop: float = job["max_drop"]
+	var spacing: float = job["spacing"]
+	var limit: int = job["limit"]
+	var cost: float = job["cost"]
+	var other_island: bool = job["other_island"]
+	var first_id: int = job["first_id"]
+	var added: int = job["added"]
+	var i: int = job["i"]
+	while i < count:
 		var polygon := mesh.get_polygon(i)
 		var centre := Vector3.ZERO
 		for index in polygon:
@@ -592,7 +620,7 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 			var a := DotBotNavGeometry.vertex_key(pa)
 			var b := DotBotNavGeometry.vertex_key(pb)
 			var key := DotBotNavGeometry.edge_key(a, b)
-			if uses.get(key, 0) != 1:
+			if _uses.get(key, 0) != 1:
 				continue
 			var along := pb - pa
 			var out := Vector3(along.z, 0.0, -along.x).normalized()
@@ -615,8 +643,148 @@ func _find_edges(first_id: int, reaches: Array, min_drop: float, max_drop: float
 				add_ride(rim, found, first_id + added, cost)
 				added += 1
 				if added >= limit:
-					return added
-	return added
+					job["added"] = added
+					return true
+		i += 1
+		if _past(until_usec):
+			break
+	job["i"] = i
+	job["added"] = added
+	return i >= count
+
+
+func _step_stitches(job: Dictionary, until_usec: int) -> bool:
+	var max_gap: float = job["max_gap"]
+	var max_rise: float = job["max_rise"]
+	var vertices := mesh.get_vertices()
+	if int(job["stage"]) == 0:
+		# fewer than two islands has nothing to join, whatever the rim holds
+		if islands().size() < 2:
+			return true
+		job["stage"] = 1
+		if _past(until_usec):
+			return false
+	if int(job["stage"]) == 1:
+		if not _count_uses(until_usec):
+			return false
+		job["stage"] = 2
+		job["grid"] = {}
+		job["rim"] = []
+		job["i"] = 0
+		if _past(until_usec):
+			return false
+	if int(job["stage"]) == 2:
+		var grid: Dictionary = job["grid"]
+		var rim: Array = job["rim"]
+		var count := mesh.get_polygon_count()
+		var i: int = job["i"]
+		while i < count:
+			var polygon := mesh.get_polygon(i)
+			var owner := _island_of[i] if i < _island_of.size() else -1
+			for k in polygon.size():
+				var pa := vertices[polygon[k]]
+				var pb := vertices[polygon[(k + 1) % polygon.size()]]
+				if _uses.get(DotBotNavGeometry.edge_key(DotBotNavGeometry.vertex_key(pa), DotBotNavGeometry.vertex_key(pb)), 0) != 1:
+					continue
+				# two points per rim edge, so a long wall of mesh still has candidates along it
+				for p: Vector3 in [pa, pa.lerp(pb, 0.5)]:
+					var cell := Vector2i(floori(p.x / max_gap), floori(p.z / max_gap))
+					if not grid.has(cell):
+						grid[cell] = []
+					grid[cell].append(rim.size())
+					rim.append([p, owner])
+			i += 1
+			if i % 64 == 0 and _past(until_usec):
+				break
+		job["i"] = i
+		if i < count:
+			return false
+		job["stage"] = 3
+		job["best"] = {}
+		job["i"] = 0
+		if _past(until_usec):
+			return false
+	if int(job["stage"]) == 3:
+		var grid: Dictionary = job["grid"]
+		var rim: Array = job["rim"]
+		var best: Dictionary = job["best"]
+		var i: int = job["i"]
+		while i < rim.size():
+			var entry: Array = rim[i]
+			var v: Vector3 = entry[0]
+			var a: int = entry[1]
+			var cv := Vector2i(floori(v.x / max_gap), floori(v.z / max_gap))
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					for j: int in grid.get(Vector2i(cv.x + dx, cv.y + dz), []):
+						var w: Vector3 = rim[j][0]
+						var b: int = rim[j][1]
+						if b == a or a < 0 or b < 0 or a > b:
+							continue
+						var flat := Vector2(v.x - w.x, v.z - w.z).length()
+						var dy := absf(v.y - w.y)
+						if flat > max_gap * (1.0 - 0.5 * minf(dy / max_rise, 1.0)) or dy > 24.0 or (dy > max_rise and flat > 0.5):
+							continue
+						var score := flat + dy
+						var pair := Vector2i(a, b)
+						if not best.has(pair):
+							best[pair] = []
+						var kept: Array = best[pair]
+						kept.append([v, w, score])
+						kept.sort_custom(func(x: Array, y: Array) -> bool: return x[2] < y[2])
+						if kept.size() > STITCH_CANDIDATES:
+							kept.resize(STITCH_CANDIDATES)
+			i += 1
+			if i % 64 == 0 and _past(until_usec):
+				break
+		job["i"] = i
+		if i < rim.size():
+			return false
+		job["stage"] = 4
+		job["pairs"] = best.keys()
+		job["i"] = 0
+		job.erase("grid")
+		job.erase("rim")
+		if _past(until_usec):
+			return false
+	var best_of: Dictionary = job["best"]
+	var pairs: Array = job["pairs"]
+	var space: PhysicsDirectSpaceState3D = null
+	if _root != null and is_instance_valid(_root) and _root.is_inside_tree():
+		space = _root.get_world_3d().direct_space_state
+	var first_id: int = job["first_id"]
+	var limit: int = job["limit"]
+	var cost: float = job["cost"]
+	var added: int = job["added"]
+	var chest := Vector3(0.0, 0.9, 0.0)
+	var n: int = job["i"]
+	while n < pairs.size():
+		var pair: Vector2i = pairs[n]
+		n += 1
+		# the closest pair may lie through a wall (a doorway's jamb); the next closest that sees across is the link
+		var v := Vector3.INF
+		var w := Vector3.INF
+		for candidate: Array in best_of[pair]:
+			if space == null or space.intersect_ray(PhysicsRayQueryParameters3D.create(candidate[0] + chest, candidate[1] + chest)).is_empty():
+				v = candidate[0]
+				w = candidate[1]
+				break
+		if v != Vector3.INF and not _buried(v) and not _buried(w):
+			var low := v if v.y <= w.y else w
+			var high := w if v.y <= w.y else v
+			add_ride(high, low, first_id + added, cost)
+			added += 1
+			if high.y - low.y <= max_rise:
+				add_ride(low, high, first_id + added, cost)
+				added += 1
+			if added >= limit:
+				job["added"] = added
+				return true
+		if _past(until_usec):
+			break
+	job["i"] = n
+	job["added"] = added
+	return n >= pairs.size()
 
 
 ## Whether a point a little above [param feet] lies inside a solid body: a scrap of mesh a bake leaves inside a wall's footprint, which no body stands on or reaches.
@@ -833,8 +1001,7 @@ func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 	if mesh == null:
 		return -1
 	var vertices := mesh.get_vertices()
-	if _poly_grid.is_empty() or _poly_grid_for != Vector2i(vertices.size(), mesh.get_polygon_count()):
-		_build_poly_grid(vertices)
+	_poly_grid_ready(vertices)
 	var best := -1
 	var best_dy := INF
 	var bucket: Variant = _poly_grid.get(Vector2i(floori(at.x / DotBotNavGeometry.ISLAND_CELL), floori(at.z / DotBotNavGeometry.ISLAND_CELL)))
@@ -854,6 +1021,11 @@ func polygon_at(at: Vector3, reach: float = 1.0) -> int:
 				best_dy = dy
 				best = i
 	return best
+
+
+func _poly_grid_ready(vertices: PackedVector3Array) -> void:
+	if _poly_grid.is_empty() or _poly_grid_for != Vector2i(vertices.size(), mesh.get_polygon_count()):
+		_build_poly_grid(vertices)
 
 
 func _build_poly_grid(vertices: PackedVector3Array) -> void:

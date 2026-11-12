@@ -72,6 +72,9 @@ var drops: bool = true
 var dropped: int = 0
 var hopped: int = 0
 var _dropped_once := false
+# join_step's searches still to run, and the stats it fills
+var _jobs: Array[Dictionary] = []
+var _stepping: Dictionary = {}
 ## Metres a button may be used from, and how far from the mesh a teleport box may lie and still be entered by a step.
 const USE_REACH := 1.6
 const ENTRY_SLACK := 1.0
@@ -168,6 +171,40 @@ func carve(nav: DotBotNav) -> void:
 ## Joins each teleport not yet joined to [param nav] (which must be ready) as an edge from the mesh point inside its
 ## box to its destination, ids [constant TELEPORT_ID] up in the order read. Returns [member joined].
 func join(nav: DotBotNav) -> Dictionary:
+	var _done := join_step(nav)
+	return joined
+
+
+## [method join] a slice at a time, for a map whose drop, hop and stitch search outlasts a frame: true when
+## done, [member joined] then set. The first call joins teleports, ladders and platforms; each call searches
+## until [param until_usec] ([method Time.get_ticks_usec], 0 to the end), with [member DotBotNav.held] set meanwhile.
+func join_step(nav: DotBotNav, until_usec: int = 0) -> bool:
+	if _jobs.is_empty():
+		_stepping = _join_now(nav)
+		if drops and not _dropped_once:
+			_dropped_once = true
+			_jobs = [nav.begin_edges(&"drops", DROP_ID, {"min_drop": DROP_MIN}), nav.begin_edges(&"hops", HOP_ID), nav.begin_edges(&"stitches", STITCH_ID)]
+			nav.held = true
+	while not _jobs.is_empty():
+		var job: Dictionary = _jobs[0]
+		if not nav.step_edges(job, until_usec):
+			return false
+		_jobs.pop_front()
+		var added := int(job["added"])
+		_stepping[String(job["kind"])] = added
+		if job["kind"] == &"drops":
+			dropped = added
+		elif job["kind"] == &"hops":
+			hopped = added
+		if _jobs.is_empty():
+			nav.held = false
+		elif until_usec > 0 and Time.get_ticks_usec() >= until_usec:
+			return false
+	joined = _stepping
+	return true
+
+
+func _join_now(nav: DotBotNav) -> Dictionary:
 	var stats := {"joined": 0, "off_mesh": 0, "stranded": 0}
 	off_mesh.clear()
 	for i in teleports.size():
@@ -193,16 +230,6 @@ func join(nav: DotBotNav) -> Dictionary:
 	if not _platforms_joined:
 		_platforms_joined = true
 		stats["platforms"] = _join_platforms(nav)
-	if drops and not _dropped_once:
-		_dropped_once = true
-		dropped = nav.find_drops(DROP_ID, DROP_MIN)
-		stats["drops"] = dropped
-		hopped = nav.find_hops(HOP_ID) if drops else 0
-		stats["hops"] = hopped
-		nav.begin_batch()
-		stats["stitches"] = nav.find_stitches(STITCH_ID) if drops else 0
-		nav.end_batch()
-	joined = stats
 	return stats
 
 
