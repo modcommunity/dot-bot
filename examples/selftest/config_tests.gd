@@ -447,8 +447,13 @@ func _test_think_tier() -> void:
 	t.begin(32, PackedVector3Array(), PackedVector3Array(), ids, at)
 	_check(t.period(1, at[0], false) == t.far_every, "with no person every bot is far")
 	t.nearest = 1
+	t.body_above = 32
 	t.begin(32, eyes, looks, ids, at)
-	_check(t.body_period(4, at[3], false) == 1 and t.body_period(3, at[2], false) == 1 and t.body_counts.is_empty(), "body tiers are off by default: every body ticks every tick")
+	_check(t.body_period(4, at[3], false) == 1 and t.body_period(3, at[2], false) == 1 and t.body_counts.is_empty(), "body tiers are off at body_above players or fewer: every body ticks every tick")
+	t.body_above = 24
+	t.begin(32, eyes, looks, ids, at)
+	_check(t.body_near_every == 2 and t.body_far_every == 4 and t.body_period(4, at[3], false) == 4 and t.body_period(3, at[2], false) == 2, "body tiers are on by default above body_above players: near 2, far 4")
+	t.body_counts.clear()
 	t.body_far_every = 3
 	t.body_near_every = 2
 	_check(t.body_period(4, at[3], false) == 3 and t.body_period(3, at[2], false) == 2, "body_far_every and body_near_every: an unseen bot moves every few ticks by its distance")

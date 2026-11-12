@@ -40,5 +40,6 @@ extends RefCounted
 # 21: DotBotThinkTier.idle_view_every and period(..., idle) (an idle bot a person only sees thins out; idle defaults false, so callers that do not pass it are unchanged).
 # 22: DotBotThinkTier.body_near_every, body_far_every, body_period, body_counts (body tiers: the game may tick an unseen near or far bot's motor every few ticks; off by default).
 # 23: DotBotNav.bake / bake_in_background agent keys `cell` and `cell_height` (per-bake cell size, in the cache digest and the map's cell size; defaults CELL, CELL_HEIGHT unchanged).
-const LEVEL := 23
+# 24: DotBotThinkTier.body_above; body tiers on by default (body_near_every 2, body_far_every 4) above 24 players.
+const LEVEL := 24
 const OLDEST := 1

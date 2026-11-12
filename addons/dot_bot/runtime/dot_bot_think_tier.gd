@@ -12,7 +12,7 @@ extends RefCounted
 ## (held buttons, the view carried towards where it last looked), so its walk, its hitboxes and lag compensation are the
 ## same at any period. A bot a person was just hurt by, or that turns on a person, is full rate on its next think.
 ##
-## Body tiers (API 22, off by default) go one step further for the bots nobody can meet: [method body_period] is how
+## Body tiers (API 22; on by default above [member body_above] players since API 23) go one step further for the bots nobody can meet: [method body_period] is how
 ## many ticks apart the game may run the motor of a bot that is near or far by the rules above (not seen, not fighting a
 ## person, not close or nearest), the game making the ticks up in one longer motor tick. Such a bot walks in steps and
 ## its hitboxes jump, which no person sees; anything the game cannot carry over (a jump, a push, the air) is its call.
@@ -51,16 +51,22 @@ var view_half_angle: float = 60.0:
 		view_half_angle = value
 		_view_cos = cos(deg_to_rad(clampf(value, 0.0, 180.0)))
 
-## Ticks between motor ticks of a bot [method period] calls near, and far ([method body_period]); 1, the default:
-## every bot's body moves every tick. Never stretched by [member load_scale], capped at [constant MAX_PERIOD].
-var body_near_every: int = 1
-var body_far_every: int = 1
+## Ticks between motor ticks of a bot [method period] calls near, and far ([method body_period]); 1: every bot's body
+## moves every tick. Never stretched by [member load_scale], capped at [constant MAX_PERIOD]. Measured on 48 bots
+## (staging02, windowed, 3 runs a side, 2/4 against 1/1): ticks per second +18%, dropped ticks per second -28%, the
+## per-tick cost of the game -14%; the frame itself runs longer, because the game spends the gain on catch-up ticks.
+var body_near_every: int = 2
+var body_far_every: int = 4
+## Players above which body tiers apply (on top of [member above]): a small game has too few bots to pay for steps
+## in their bodies. Negative: never.
+var body_above: int = 24
 
 var _view_cos: float = cos(deg_to_rad(60.0))
 var _eyes := PackedVector3Array()
 var _looks := PackedVector3Array()
 var _pinned: Dictionary = {}
 var _on: bool = false
+var _body_on: bool = false
 ## Answers of [method period] since the tier was made, by reason, for a profile: off, engaged, pinned, close, view,
 ## idle_view, engaged_far, near, far.
 var counts: Dictionary = {}
@@ -81,6 +87,7 @@ func applies(players: int) -> bool:
 ## (parallel) for the nearest-bots rule. [param players] is everyone in the game, for [method applies].
 func begin(players: int, eyes: PackedVector3Array, looks: PackedVector3Array, bot_ids: PackedInt32Array, bot_positions: PackedVector3Array) -> void:
 	_on = applies(players)
+	_body_on = _on and body_above >= 0 and players > body_above
 	_eyes = eyes
 	_looks = looks
 	_pinned.clear()
@@ -131,7 +138,7 @@ func period(id: int, position: Vector3, engaged: bool, idle: bool = false) -> in
 ## Ticks between motor ticks for the same bot as [method period] (1 = every tick): above 1 only for a bot near or far,
 ## at [member body_near_every] or [member body_far_every]. Counted in [member body_counts], not [member counts].
 func body_period(id: int, position: Vector3, engaged: bool, idle: bool = false) -> int:
-	if maxi(body_near_every, body_far_every) <= 1:
+	if not _body_on or maxi(body_near_every, body_far_every) <= 1:
 		return 1
 	_classify(id, position, engaged, idle)
 	var every := 1
