@@ -485,8 +485,13 @@ func _sees(world: DotBotWorld, eye: Vector3, c: DotBotContact, now: float) -> bo
 		return first
 	var row := held as Array
 	var at: float = row[0]
-	if row[2] == stamp and now >= at and now - at < SIGHT_REUSE:
-		return row[1]
+	if row[2] == stamp and now >= at:
+		if now - at < SIGHT_REUSE:
+			return row[1]
+		# Sight LOD: a far body behind a wall stays unseen a little longer; never the target, never a "seen".
+		if not row[1] and world.sight_far > 0.0 and now - at < world.sight_far_reuse and c.id != target_id \
+				and eye.distance_squared_to(c.position) > world.sight_far * world.sight_far:
+			return false
 	var seen := world.line_of_sight(eye, c.aim_point()) or world.line_of_sight(eye, c.eye())
 	# The row is this brain's own: written in place, a sight test allocates nothing after the first.
 	row[0] = now

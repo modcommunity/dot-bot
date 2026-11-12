@@ -499,6 +499,39 @@ func _test_utility_grenades() -> void:
 	_done()
 
 
+func _test_sight_lod() -> void:
+	_section("sight LOD: a far unseen body keeps its answer longer, a seen one or the target never")
+	var me := DotBotContact.make(1, Vector3.ZERO)
+	var far := DotBotContact.make(2, Vector3(0, 0, -30))
+	var near := DotBotContact.make(3, Vector3(0, 0, -8))
+	var world := DotBotWorld.new()
+	var state := {"wall": true, "rays": 0}
+	world.line_of_sight_fn = func(_a: Vector3, _b: Vector3) -> bool:
+		state["rays"] += 1
+		return not state["wall"]
+	var brain := DotBotBrain.new(1, DotBotSettings.new())
+	brain.leave_native()
+	var eye := me.eye()
+	var rays_at := func(c: DotBotContact, t: float) -> int:
+		var before: int = state["rays"]
+		var _s := brain._sees(world, eye, c, t)
+		return state["rays"] - before
+	_check(rays_at.call(far, 0.0) == 2 and rays_at.call(far, 0.06) == 2, "off by default: a far hidden body is traced again after SIGHT_REUSE")
+	world.sight_far = 20.0
+	world.sight_far_reuse = 0.15
+	_check(rays_at.call(far, 0.3) == 2 and rays_at.call(far, 0.36) == 0 and rays_at.call(far, 0.44) == 0, "on: a far hidden body is not traced again within sight_far_reuse")
+	_check(rays_at.call(far, 0.46) == 2, "and is traced again once it ends")
+	_check(rays_at.call(near, 0.5) == 2 and rays_at.call(near, 0.56) == 2, "a near hidden body is traced as before")
+	brain.target_id = 2
+	_check(rays_at.call(far, 0.52) == 2, "the bot's own target is traced as before")
+	brain.target_id = -1
+	state["wall"] = false
+	_check(brain._sees(world, eye, far, 0.7), "a far body in the open is seen")
+	state["wall"] = true
+	_check(rays_at.call(far, 0.76) == 2 and not brain._sees(world, eye, far, 0.77), "a seen far body is traced again after SIGHT_REUSE, never held as seen")
+	_done()
+
+
 func _pickup_scene(drop_at: Vector3, drop_value: float, held: Dictionary, with_enemy: bool = false) -> Array:
 	var sc := _scene(Vector3(0, 0, -15))
 	var me: DotBotContact = sc[0]

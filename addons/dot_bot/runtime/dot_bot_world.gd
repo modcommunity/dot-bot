@@ -151,6 +151,12 @@ func _pack(all: Array) -> void:
 		_senses.call(&"load_eyes", eyes)
 
 
+## Sight LOD: a body farther than this (m) that was not seen keeps that answer for
+## [member sight_far_reuse] seconds instead of the brain's own short reuse; 0 is off.
+## Only a "not seen" is held, never for the bot's current target, so no shot goes blind.
+var sight_far: float = 0.0
+var sight_far_reuse: float = 0.15
+
 ## `{center, radius, until}` per sight blocker (smoke), by id; a segment through one is not clear.
 var sight_blockers: Dictionary = {}
 var _blocker_seq: int = 0

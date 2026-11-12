@@ -41,5 +41,6 @@ extends RefCounted
 # 22: DotBotThinkTier.body_near_every, body_far_every, body_period, body_counts (body tiers: the game may tick an unseen near or far bot's motor every few ticks; off by default).
 # 23: DotBotNav.bake / bake_in_background agent keys `cell` and `cell_height` (per-bake cell size, in the cache digest and the map's cell size; defaults CELL, CELL_HEIGHT unchanged).
 # 24: DotBotThinkTier.body_above; body tiers on by default (body_near_every 2, body_far_every 4) above 24 players.
-const LEVEL := 24
+# 25: DotBotWorld.sight_far, sight_far_reuse (sight LOD: a far body not seen keeps that answer longer; off by default).
+const LEVEL := 25
 const OLDEST := 1
