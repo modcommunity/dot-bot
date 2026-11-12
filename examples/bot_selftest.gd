@@ -3,7 +3,7 @@ extends "res://examples/selftest/policy_tests.gd"
 ## dot-bot's suite (`godot --headless --path . res://examples/bot_selftest.tscn`): presets, cvars, names, roster, and a bot's senses, aim and fights measured rather than read.
 ## The numbers a player feels are measured per preset (time to first shot, aim error, turn speed, K/D against one fixed opponent); the bands are what the presets promise.
 
-const CHECKS := 646
+const CHECKS := 647
 
 ## Of CHECKS, the ones that need dot-sql and the SQLite extension linked into this project.
 const SQL_CHECKS := 0
@@ -224,6 +224,15 @@ func _test_join_sliced() -> void:
 	_check(calls > 3 and held and sliced.is_ready(), "sliced: many calls, no route between them, ready after", str(calls))
 	_check(links.joined == at_once and sliced.rides() == whole.rides(), "sliced: the same stats and the same edges, ids and order",
 		"%s vs %s, %d vs %d edges" % [links.joined, at_once, sliced.rides().size(), whole.rides().size()])
+	# The finders called on a nav never held: the search must not see its own hold (closest() then answers its input).
+	var plain := DotBotNav.new()
+	var _plain_baked := plain.bake(made[0], agent, 0, [made[1]])
+	var _d := plain.find_drops(DotBotLinks.DROP_ID, DotBotLinks.DROP_MIN)
+	var _h := plain.find_hops(DotBotLinks.HOP_ID)
+	var _s := plain.find_stitches(DotBotLinks.STITCH_ID)
+	_check(sliced.rides() == plain.rides(), "sliced: the edges the finders add on a nav never held",
+		"%d vs %d edges" % [sliced.rides().size(), plain.rides().size()])
+	plain.clear()
 	whole.clear()
 	sliced.clear()
 	made[0].queue_free()
