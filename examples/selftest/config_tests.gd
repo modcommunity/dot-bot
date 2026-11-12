@@ -446,6 +446,17 @@ func _test_think_tier() -> void:
 	_check(t.period(5, at[4], false) == 1 and t.period(3, at[2], false) == t.near_every, "nearest 2 pins the two closest")
 	t.begin(32, PackedVector3Array(), PackedVector3Array(), ids, at)
 	_check(t.period(1, at[0], false) == t.far_every, "with no person every bot is far")
+	t.nearest = 1
+	t.begin(32, eyes, looks, ids, at)
+	_check(t.body_period(4, at[3], false) == 1 and t.body_period(3, at[2], false) == 1 and t.body_counts.is_empty(), "body tiers are off by default: every body ticks every tick")
+	t.body_far_every = 3
+	t.body_near_every = 2
+	_check(t.body_period(4, at[3], false) == 3 and t.body_period(3, at[2], false) == 2, "body_far_every and body_near_every: an unseen bot moves every few ticks by its distance")
+	_check(t.body_period(1, at[0], false) == 1 and t.body_period(2, at[1], false) == 1 and t.body_period(4, at[3], true) == 1 and t.body_period(2, at[1], false, true) == 1, "the nearest, a seen (even idle) and a fighting bot keep their body every tick")
+	_check(int(t.body_counts.get(&"far", 0)) == 1 and int(t.body_counts.get(&"near", 0)) == 1, "body_counts counts the thinned bodies by reason")
+	_check(t.period(4, at[3], false) == t.far_every and t.period(3, at[2], false) == t.near_every, "body tiers change no think period")
+	t.body_far_every = 100
+	_check(t.body_period(4, at[3], false) == DotBotThinkTier.MAX_PERIOD, "a body period stops at MAX_PERIOD")
 	var thinks := 0
 	var tick := 2
 	while tick < 50:

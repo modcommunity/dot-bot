@@ -38,5 +38,6 @@ extends RefCounted
 # 19: DotBotObjective, DotBotGoal, DotBotWorld.objective, DotBotBrain.goal, DotBotPersona.role_bias; profile rows role_defend, role_attack, role_support, objective_focus, defend_radius (team jobs in a flag mode); DotBotObjective.set_point (the same jobs around a hill).
 # 20: DotBotPersona.scale, spread, derive_into, shapes_skill; DotBotSettings.derived, sync; DotBotPersonaPool.deal, given; DotBotProfile.set_number, copy_from (each bot its own persona).
 # 21: DotBotThinkTier.idle_view_every and period(..., idle) (an idle bot a person only sees thins out; idle defaults false, so callers that do not pass it are unchanged).
-const LEVEL := 21
+# 22: DotBotThinkTier.body_near_every, body_far_every, body_period, body_counts (body tiers: the game may tick an unseen near or far bot's motor every few ticks; off by default).
+const LEVEL := 22
 const OLDEST := 1
