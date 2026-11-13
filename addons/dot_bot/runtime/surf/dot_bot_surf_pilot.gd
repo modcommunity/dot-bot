@@ -102,8 +102,10 @@ var rolling: bool = true
 ## resumes on the next ticks and the veto is judged once the forecast completes.
 var forecast_budget: int = 24
 ## The same for a veto (up to eight futures, about 2,000 steps, ~300 ms in one tick). The veto starts
-## the ticks it will be late ahead of the real state; 0 runs it all in one tick.
-var veto_budget: int = 48
+## the ticks it will be late ahead of the real state; 0 runs it all in one tick. 40 (48 before
+## 2026-11-13) takes five riders on surf_ski_2 from about 24 to about 20 ms tick p95 with as many
+## rides landed; 32 was cheaper again but landed fewer (its answer comes later). See docs/surfing.md.
+var veto_budget: int = 40
 
 ## Statistics: futures run afresh, vetoes taken, how many of those found no way out, and how
 ## often a kept forecast stopped matching.
