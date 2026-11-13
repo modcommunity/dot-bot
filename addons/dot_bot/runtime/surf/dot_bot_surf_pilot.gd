@@ -76,6 +76,13 @@ var _coarse: Dictionary = {}
 ## Cells with an entry within two cells of them: a state in any other is far from every ride, and
 ## goes straight to the coarse grid instead of opening 124 empty cells to find that out.
 var _near: Dictionary = {}
+## Cell -> [ring 1 boxes, ring 1 buckets, ring 2 boxes, ring 2 buckets]: the cell's neighbours that
+## hold entries, in the order [method nearest] opens them, with each one's lower corner. Filled
+## as states ask: most of the 124 neighbours of a cell are empty, and finding that out a lookup at
+## a time was a third of the lookup.
+var _rings: Dictionary = {}
+## Coarse cell -> [shell 0 boxes, shell 0 buckets, shell 1 ...]: the same for the coarse grid.
+var _shells: Dictionary = {}
 var _sparse: PackedInt32Array = PackedInt32Array()
 var reference_yaw: float = 0.0
 ## The simulator tracking and the veto run on. Without one the pilot only copies actions.
@@ -193,6 +200,8 @@ func load_entries(rides: PackedFloat32Array, lengths: PackedInt32Array, yaw: flo
 	for i in range(0, size(), SPARSE_STRIDE):
 		_sparse.append(i)
 	_near = {}
+	_rings = {}
+	_shells = {}
 	for key: Vector3i in _grid:
 		for dx in range(-2, 3):
 			for dy in range(-2, 3):
@@ -208,6 +217,8 @@ func share_cache(other: DotBotSurfPilot) -> DotBotSurfPilot:
 	_grid = other._grid
 	_coarse = other._coarse
 	_near = other._near
+	_rings = other._rings
+	_shells = other._shells
 	_sparse = other._sparse
 	reference_yaw = other.reference_yaw
 	return self
@@ -306,57 +317,100 @@ func nearest(state: Variant) -> int:
 	var own: Variant = _grid.get(centre)
 	if own != null:
 		_scan(own, position, velocity)
-	for radius in ([1, 2] if _near.has(centre) else []):
-		for dx in range(-radius, radius + 1):
-			for dy in range(-radius, radius + 1):
-				for dz in range(-radius, radius + 1):
-					if dx == 0 and dy == 0 and dz == 0:
-						continue
-					if radius == 2 and absi(dx) < 2 and absi(dy) < 2 and absi(dz) < 2:
-						continue
-					var key := centre + Vector3i(dx, dy, dz)
-					var bucket: Variant = _grid.get(key)
-					if bucket == null:
-						continue
-					# A cell no entry of which can beat the best so far is skipped: the distance is
-					# at least the position part, and that is at least the distance to the cell's
-					# box. The answer is the one the full scan gives; on a ride line most
-					# of the 26 neighbours hold hundreds of entries and are this far away. It was
-					# most of a forecast's cost (game-airdrift: 390 us a simulated tick, 90 of it
-					# the motor).
-					if _box_distance_squared(key, position) >= _scan_d:
-						continue
-					_scan(bucket, position, velocity)
-		if _scan_best >= 0:
-			return _scan_best
+	if _near.has(centre):
+		var rings: Variant = _rings.get(centre)
+		if rings == null:
+			rings = _rings_of(centre)
+		var side := Vector3(CELL, CELL, CELL)
+		for r in [0, 2]:
+			var boxes: PackedVector3Array = rings[r]
+			var buckets: Array = rings[r + 1]
+			for k in boxes.size():
+				# A cell no entry of which can beat the best so far is skipped: the distance is
+				# at least the position part, and that is at least the distance to the cell's
+				# box. The answer is the one the full scan gives; on a ride line most
+				# of the 26 neighbours hold hundreds of entries and are this far away. It was
+				# most of a forecast's cost (game-airdrift: 390 us a simulated tick, 90 of it
+				# the motor).
+				var lo := boxes[k]
+				if position.clamp(lo, lo + side).distance_squared_to(position) >= _scan_d:
+					continue
+				_scan(buckets[k], position, velocity)
+			if _scan_best >= 0:
+				return _scan_best
 	# Nothing within two cells: the state is off every ride (a veto's candidate gone wrong, a bot
 	# knocked away). A scan of every entry was a millisecond a call, and a veto asks for hundreds
 	# (game-fatal-contact, 2026-10-19: 4 to 12 ms a riding tick, nearly all of it this scan). A coarse grid,
 	# ring by ring outward, skipping a cell whose box is further than the best so far and stopping
 	# when the next ring cannot hold a nearer entry: the nearest entry. Past the last ring a sample.
 	var ccentre := _coarse_cell(position)
+	var shells: Variant = _shells.get(ccentre)
+	if shells == null:
+		shells = _shells_of(ccentre)
 	var width := CELL * COARSE_CELLS
+	var side := Vector3(width, width, width)
 	for radius in range(0, COARSE_RINGS):
 		var reach := float(radius - 1) * width
 		if _scan_best >= 0 and radius >= 2 and reach * reach >= _scan_d:
 			break
-		for dx in range(-radius, radius + 1):
-			var edge_x := absi(dx) == radius
-			for dy in range(-radius, radius + 1):
-				var edge_xy := edge_x or absi(dy) == radius
-				# Inside the shell only the two faces in z are on it.
-				for dz in ([-radius, radius] if not edge_xy and radius > 0 else range(-radius, radius + 1)):
-					var key := ccentre + Vector3i(dx, dy, dz)
-					var bucket: Variant = _coarse.get(key)
-					if bucket == null:
-						continue
-					if _scan_best >= 0 and _coarse_box_distance_squared(key, position) >= _scan_d:
-						continue
-					_scan(bucket, position, velocity)
+		var boxes: PackedVector3Array = shells[radius * 2]
+		var buckets: Array = shells[radius * 2 + 1]
+		for k in boxes.size():
+			var lo := boxes[k]
+			if _scan_best >= 0 and position.clamp(lo, lo + side).distance_squared_to(position) >= _scan_d:
+				continue
+			_scan(buckets[k], position, velocity)
 	if _scan_best >= 0:
 		return _scan_best
 	_scan(_sparse, position, velocity)
 	return _scan_best
+
+
+## The coarse cells around [param centre] that hold entries, shell 0 to COARSE_RINGS - 1, each
+## in the order nearest opened them before: x, then y, then z, from -radius up.
+func _shells_of(centre: Vector3i) -> Array:
+	var shells: Array = []
+	var width := CELL * COARSE_CELLS
+	for radius in range(0, COARSE_RINGS):
+		var boxes := PackedVector3Array()
+		var buckets: Array = []
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				for dz in range(-radius, radius + 1):
+					if absi(dx) < radius and absi(dy) < radius and absi(dz) < radius:
+						continue
+					var key := centre + Vector3i(dx, dy, dz)
+					var bucket: Variant = _coarse.get(key)
+					if bucket != null:
+						boxes.append(Vector3(key) * width)
+						buckets.append(bucket)
+		shells.append(boxes)
+		shells.append(buckets)
+	_shells[centre] = shells
+	return shells
+
+
+## The neighbours of [param centre] that hold entries, ring 1 then ring 2, each in the order
+## nearest opened them before: x, then y, then z, from -radius up.
+func _rings_of(centre: Vector3i) -> Array:
+	var rings: Array = []
+	for radius in [1, 2]:
+		var boxes := PackedVector3Array()
+		var buckets: Array = []
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				for dz in range(-radius, radius + 1):
+					if absi(dx) < radius and absi(dy) < radius and absi(dz) < radius:
+						continue
+					var key := centre + Vector3i(dx, dy, dz)
+					var bucket: Variant = _grid.get(key)
+					if bucket != null:
+						boxes.append(Vector3(key) * CELL)
+						buckets.append(bucket)
+		rings.append(boxes)
+		rings.append(buckets)
+	_rings[centre] = rings
+	return rings
 
 
 var _scan_best: int = -1
@@ -541,6 +595,10 @@ func _veto_run() -> void:
 		if ended:
 			_vt_a += 1
 			_vt_s = null
+			if _vt_best_score == INF:
+				# Reaching the goal scores INF and only a higher score replaces the best: no later
+				# action can, so the rest are not run.
+				_vt_a = ACTIONS.size()
 	if _vt_a >= ACTIONS.size():
 		_vt_pending = false
 		_vt_state = null
@@ -750,12 +808,6 @@ func _box_distance_squared(key: Vector3i, p: Vector3) -> float:
 	var hi := lo + Vector3(CELL, CELL, CELL)
 	var q := p.clamp(lo, hi)
 	return q.distance_squared_to(p)
-
-
-func _coarse_box_distance_squared(key: Vector3i, p: Vector3) -> float:
-	var w := CELL * COARSE_CELLS
-	var lo := Vector3(key) * w
-	return p.clamp(lo, lo + Vector3(w, w, w)).distance_squared_to(p)
 
 
 func _coarse_cell(p: Vector3) -> Vector3i:
