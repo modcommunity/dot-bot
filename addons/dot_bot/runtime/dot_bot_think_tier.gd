@@ -16,6 +16,11 @@ extends RefCounted
 ## many ticks apart the game may run the motor of a bot that is near or far by the rules above (not seen, not fighting a
 ## person, not close or nearest), the game making the ticks up in one longer motor tick. Such a bot walks in steps and
 ## its hitboxes jump, which no person sees; anything the game cannot carry over (a jump, a push, the air) is its call.
+##
+## Native (API 27): where dot-sim's library is loaded (class [code]DotSimThinkTier[/code]), [method begin], [method period],
+## [method body_period] and [method schedule] run there, with the same answers and counts (dot-sim's selftest compares the
+## two); [member native] false, or no library (the web build), keeps this script. [method schedule] is one think's
+## [method period], [method until_beat] and [method body_period] from one look at the people.
 
 ## Players above which tiers apply; at or below it every bot thinks every tick. Negative: never.
 var above: int = 16
@@ -76,6 +81,23 @@ var body_counts: Dictionary = {}
 var _reason: StringName = &"off"
 var _best_sq: float = INF
 var _seen: bool = false
+## Whether [method begin] hands the tick to dot-sim's [code]DotSimThinkTier[/code] when the library is loaded.
+var native: bool = true
+## The native tier, when the library is loaded; [member _use] when the last [method begin] gave it the tick.
+var _native: Object = null
+var _use: bool = false
+var _native_pinned: int = 0
+const _REASONS: Array[StringName] = [&"off", &"engaged", &"pinned", &"close", &"view", &"idle_view", &"engaged_far", &"near", &"far"]
+
+
+func _init() -> void:
+	if ClassDB.class_exists(&"DotSimThinkTier"):
+		_native = ClassDB.instantiate(&"DotSimThinkTier")
+
+
+## Whether the native tier answers this tick.
+func is_native() -> bool:
+	return _use
 
 
 ## Whether tiers apply to a game of [param players] players.
@@ -91,6 +113,13 @@ func begin(players: int, eyes: PackedVector3Array, looks: PackedVector3Array, bo
 	_eyes = eyes
 	_looks = looks
 	_pinned.clear()
+	_flush()
+	_use = native and _native != null
+	if _use:
+		_native.configure(PackedFloat64Array([above, near_every, far_every, far_range, close_range, nearest, engaged_far_every,
+			engaged_range, idle_view_every, load_scale, view_range, _view_cos, body_near_every, body_far_every, body_above]))
+		_native_pinned = _native.begin(players, eyes, looks, bot_ids, bot_positions)
+		return
 	if not _on or nearest <= 0:
 		return
 	var k := mini(nearest, bot_ids.size())
@@ -122,7 +151,28 @@ func is_on() -> bool:
 ## word that it fights a person or was just hurt by one; [param idle] that it has no target at all, or is dead (a bot
 ## fighting another bot is neither). Engaged wins over idle.
 func period(id: int, position: Vector3, engaged: bool, idle: bool = false) -> int:
+	if _use:
+		return _native.period(id, position, engaged, idle)
 	_classify(id, position, engaged, idle)
+	return _period_of_reason()
+
+
+## One think's schedule for bot [param id] (as [method period]): x is [method until_beat] from [param tick] with
+## [param seed] at the larger of its period and [param floor_every]; y is its [method body_period] when it then coasts (x above 1
+## and [param coastable], the game's word that it may), else 1. Counted as those calls would be, from one classification.
+func schedule(id: int, position: Vector3, engaged: bool, idle: bool, tick: int, seed: int, floor_every: int, coastable: bool) -> Vector2i:
+	if _use:
+		return _native.schedule(id, position, engaged, idle, tick, seed, floor_every, coastable)
+	_classify(id, position, engaged, idle)
+	var every := until_beat(tick, seed, maxi(_period_of_reason(), floor_every))
+	var body := 1
+	if every > 1 and coastable and _body_on and maxi(body_near_every, body_far_every) > 1:
+		body = _body_of_reason()
+	return Vector2i(every, body)
+
+
+## [method period] of the last [method _classify], counted.
+func _period_of_reason() -> int:
 	var every := 1
 	match _reason:
 		&"idle_view":
@@ -138,9 +188,16 @@ func period(id: int, position: Vector3, engaged: bool, idle: bool = false) -> in
 ## Ticks between motor ticks for the same bot as [method period] (1 = every tick): above 1 only for a bot near or far,
 ## at [member body_near_every] or [member body_far_every]. Counted in [member body_counts], not [member counts].
 func body_period(id: int, position: Vector3, engaged: bool, idle: bool = false) -> int:
+	if _use:
+		return _native.body_period(id, position, engaged, idle)
 	if not _body_on or maxi(body_near_every, body_far_every) <= 1:
 		return 1
 	_classify(id, position, engaged, idle)
+	return _body_of_reason()
+
+
+## [method body_period] of the last [method _classify], counted above 1.
+func _body_of_reason() -> int:
 	var every := 1
 	if _reason == &"near":
 		every = clampi(body_near_every, 1, MAX_PERIOD)
@@ -215,7 +272,22 @@ static func until_beat(tick: int, seed: int, every: int) -> int:
 	return 1 if every <= 1 else every - posmod(tick + seed, every)
 
 
+## Adds the native tier's counts since the last flush to [member counts] and [member body_counts].
+func _flush() -> void:
+	if _native == null:
+		return
+	var c: PackedInt64Array = _native.take_counts()
+	for r in _REASONS.size():
+		if c[r] > 0:
+			counts[_REASONS[r]] = int(counts.get(_REASONS[r], 0)) + c[r]
+	if c[9] > 0:
+		body_counts[&"near"] = int(body_counts.get(&"near", 0)) + c[9]
+	if c[10] > 0:
+		body_counts[&"far"] = int(body_counts.get(&"far", 0)) + c[10]
+
+
 func describe() -> Dictionary:
-	return {"above": above, "near_every": near_every, "far_every": far_every, "far_range": far_range,
+	_flush()
+	return {"native": _use, "above": above, "near_every": near_every, "far_every": far_every, "far_range": far_range,
 		"close_range": close_range, "engaged_far_every": engaged_far_every, "engaged_range": engaged_range, "idle_view_every": idle_view_every, "load_scale": load_scale, "nearest": nearest, "view_range": view_range,
-		"view_half_angle": view_half_angle, "body_near_every": body_near_every, "body_far_every": body_far_every, "body_counts": body_counts, "on": _on, "people": _eyes.size(), "pinned": _pinned.size(), "counts": counts}
+		"view_half_angle": view_half_angle, "body_near_every": body_near_every, "body_far_every": body_far_every, "body_counts": body_counts, "on": _on, "people": _eyes.size(), "pinned": _native_pinned if _use else _pinned.size(), "counts": counts}

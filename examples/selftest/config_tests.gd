@@ -409,6 +409,7 @@ func _test_think_tier() -> void:
 	_section("think-rate tiers: watched, fighting and nearest bots every tick, the rest every few")
 
 	var t := DotBotThinkTier.new()
+	t.native = false  # this script's own answers; dot-sim's selftest compares the native tier with them
 	var eyes := PackedVector3Array([Vector3.ZERO])
 	var looks := PackedVector3Array([Vector3(0, 0, -1)])
 	var ids := PackedInt32Array([1, 2, 3, 4, 5])
@@ -468,6 +469,23 @@ func _test_think_tier() -> void:
 		thinks += 1
 		tick += DotBotThinkTier.until_beat(tick, 3, 4)
 	_check(thinks == 13 and tick == 53 and DotBotThinkTier.until_beat(7, 3, 1) == 1, "a period of 4 thinks on its beat from the first think on; 1 every tick")
+	t.body_far_every = 4
+	var u := DotBotThinkTier.new()
+	u.native = false
+	for key in [&"above", &"near_every", &"far_every", &"far_range", &"close_range", &"nearest", &"engaged_far_every", &"engaged_range", &"idle_view_every", &"load_scale", &"view_range", &"view_half_angle", &"body_near_every", &"body_far_every", &"body_above"]:
+		u.set(key, t.get(key))
+	t.begin(32, eyes, looks, ids, at)
+	u.begin(32, eyes, looks, ids, at)
+	t.counts.clear()
+	t.body_counts.clear()
+	var same := true
+	for i in ids.size():
+		for idle in [false, true]:
+			for k in 4:
+				var e := DotBotThinkTier.until_beat(k, i, maxi(t.period(ids[i], at[i], false, idle), 2))
+				var b := t.body_period(ids[i], at[i], false, idle) if e > 1 and k != 3 else 1
+				same = same and u.schedule(ids[i], at[i], false, idle, k, i, 2, k != 3) == Vector2i(e, b)
+	_check(same and u.counts == t.counts and u.body_counts == t.body_counts, "schedule is period, until_beat at the floor and body_period of a coasting bot, counted alike")
 	_done()
 
 

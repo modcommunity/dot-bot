@@ -43,5 +43,6 @@ extends RefCounted
 # 24: DotBotThinkTier.body_above; body tiers on by default (body_near_every 2, body_far_every 4) above 24 players.
 # 25: DotBotWorld.sight_far, sight_far_reuse (sight LOD: a far body not seen keeps that answer longer; off by default).
 # 26: DotBotLinks.join_step, DotBotNav.held, begin_edges, step_edges (a map's drop, hop and stitch search over several frames, the nav held unready until done; join unchanged).
-const LEVEL := 26
+# 27: DotBotThinkTier.schedule, native, is_native (one think's period, beat and body period from one classification; dot-sim's DotSimThinkTier answers when loaded).
+const LEVEL := 27
 const OLDEST := 1
